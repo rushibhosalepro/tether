@@ -1,0 +1,60 @@
+name: Tether ML impact check
+description: >
+  Fails the PR when a schema change in the diff removes or alters a column that a production
+  ML model is still serving from, and files the dependency back into DataHub.
+author: Tether
+branding:
+  icon: git-pull-request
+  color: red
+
+inputs:
+  datahub-gms-url:
+    description: DataHub GMS endpoint, e.g. http://datahub:8080
+    required: true
+  datahub-token:
+    description: DataHub personal access token
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: Optional. Only used to downgrade a block when the diff proves the change is safe.
+    required: false
+    default: ""
+  paths:
+    description: Glob of files to consider
+    required: false
+    default: "*.sql"
+  fail-on:
+    description: BLOCK or WARN
+    required: false
+    default: "BLOCK"
+
+outputs:
+  level:
+    description: BLOCK, WARN or PASS
+    value: ${{ steps.check.outputs.level }}
+  incidents:
+    description: JSON array of DataHub incident URNs raised
+    value: ${{ steps.check.outputs.incidents }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - shell: bash
+      run: pip install -e ${{ github.action_path }}/..
+
+    - id: check
+      shell: bash
+      env:
+        DATAHUB_GMS_URL: ${{ inputs.datahub-gms-url }}
+        DATAHUB_TOKEN: ${{ inputs.datahub-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        TETHER_NO_LLM: ${{ inputs.anthropic-api-key == '' && '1' || '0' }}
+      run: |
+        git diff origin/${{ github.base_ref }}...HEAD -- '${{ inputs.paths }}' > pr.patch
+        tether check --diff pr.patch --pr-url "${{ github.event.pull_request.html_url }}" --json > v.json
+        echo "level=$(python -c "import json;print(json.load(open('v.json'))['level'])")" >> $GITHUB_OUTPUT
+        echo "incidents=$(python -c "import json;print(json.dumps(json.load(open('v.json')).get('incidents',[])))")" >> $GITHUB_OUTPUT

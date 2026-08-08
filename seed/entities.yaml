@@ -1,0 +1,95 @@
+# The ML layer Tether needs and showcase-ecommerce does not ship.
+#
+# Table names below are reconciled against the live graph at emit time by
+# `tether.graph.resolve.resolve_dataset`, so they can be written the way a dbt author
+# would write them. Anything that fails to resolve is reported, not silently skipped.
+#
+# This file is also the answer sheet for the benchmark: `source_columns` is the ground
+# truth for which columns feed which model.
+
+platform: mlflow
+env: PROD
+
+feature_tables:
+  - name: customer_churn_features
+    platform: feast
+    description: Behavioural and monetary features for the churn models.
+    features:
+      - name: discount_sensitivity
+        type: CONTINUOUS
+        source_table: orders
+        source_columns: [discount_pct, total_amount]
+        description: Ratio of discounted spend to total spend over 90 days.
+      - name: order_frequency_90d
+        type: CONTINUOUS
+        source_table: orders
+        source_columns: [order_id, created_at]
+      - name: avg_basket_value
+        type: CONTINUOUS
+        source_table: orders
+        source_columns: [total_amount]
+      - name: support_ticket_count
+        type: ORDINAL
+        source_table: customers
+        source_columns: [customer_id]
+
+  - name: pricing_features
+    platform: feast
+    description: Inputs to the dynamic pricing model.
+    features:
+      - name: margin_band
+        type: ORDINAL
+        source_table: products
+        source_columns: [unit_cost, list_price]
+      - name: demand_index_7d
+        type: CONTINUOUS
+        source_table: orders
+        source_columns: [quantity, created_at]
+
+model_groups:
+  - name: churn_propensity
+    description: Successive versions of the churn propensity model.
+  - name: dynamic_pricing
+    description: Price elasticity models serving the storefront.
+
+models:
+  - name: churn_propensity_v4
+    group: churn_propensity
+    description: >
+      Predicts 30-day churn probability. Serving on the retention email trigger.
+      Silently degrades rather than erroring when an input goes missing.
+    owners: [aman]
+    last_trained: "2026-03-14"
+    features:
+      - customer_churn_features.discount_sensitivity
+      - customer_churn_features.order_frequency_90d
+      - customer_churn_features.avg_basket_value
+    metrics: { auc: "0.81", precision_at_10: "0.44" }
+    deployment:
+      name: churn-propensity-v4-serving
+      status: IN_PRODUCTION
+
+  - name: churn_propensity_v3
+    group: churn_propensity
+    description: Previous version, kept for comparison. Not serving.
+    owners: [aman]
+    last_trained: "2025-11-02"
+    features:
+      - customer_churn_features.discount_sensitivity
+      - customer_churn_features.support_ticket_count
+    deployment: null
+
+  - name: dynamic_pricing_v2
+    group: dynamic_pricing
+    description: >
+      Sets storefront price multipliers. This is the one that generates the revenue,
+      and the one nobody remembers depends on unit_cost.
+    owners: [wenjia]
+    last_trained: "2026-06-20"
+    features:
+      - pricing_features.margin_band
+      - pricing_features.demand_index_7d
+    metrics: { mape: "0.07" }
+    deployment:
+      name: dynamic-pricing-v2-serving
+      status: IN_PRODUCTION

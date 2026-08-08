@@ -1,0 +1,9 @@
+{
+  "title": "Drop orders.discount_pct",
+  "pr_url": "https://github.com/OWNER/tether/pull/1",
+  "note": "discount_sensitivity is built from this column and churn_propensity_v4 is serving. No dbt model or dashboard references it, so manifest-only analysis sees a clean drop.",
+  "columns": {
+    "orders.discount_pct": "BLOCK"
+  },
+  "expected_models": ["churn_propensity_v4"]
+}

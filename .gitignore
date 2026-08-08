@@ -1,0 +1,27 @@
+# planning notes, not part of the submission
+plan.md
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# secrets and local config
+.env
+.env.local
+*.pem
+
+# local run output
+# note: bench/results/ is deliberately NOT ignored. the numbers are the submission.
+predictions.jsonl
+.tether_cache/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

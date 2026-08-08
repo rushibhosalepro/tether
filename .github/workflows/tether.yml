@@ -1,0 +1,51 @@
+name: tether
+
+on:
+  pull_request:
+    paths:
+      - "demo/warehouse/**"
+      - "**/*.sql"
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  ml-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -e .
+
+      - name: Compute the diff
+        run: git diff origin/${{ github.base_ref }}...HEAD -- '*.sql' > pr.patch
+
+      - name: Walk DataHub lineage into the ML layer
+        env:
+          DATAHUB_GMS_URL: ${{ secrets.DATAHUB_GMS_URL }}
+          DATAHUB_TOKEN: ${{ secrets.DATAHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          # no DataHub reachable from CI? the recorded fixtures carry the demo
+          DEMO_MODE: ${{ secrets.DATAHUB_GMS_URL == '' && '1' || '0' }}
+        run: |
+          tether check \
+            --diff pr.patch \
+            --pr-url "${{ github.event.pull_request.html_url }}" \
+            --json | tee verdict.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tether-verdict
+          path: verdict.json
