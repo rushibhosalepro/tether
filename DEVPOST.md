@@ -52,6 +52,8 @@ Tether runs on every pull request that touches a `.sql` file.
 So the dependency that used to live in one senior engineer's head is now a check on the PR and a
 first-class incident the next person inherits.
 
+![A pull request blocked by Tether: the comment names churn_propensity_v4, its owner @aman, and the last training date, and the failing tether check greys out the merge button](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/01-pr1-blocked-full.jpeg)
+
 ## The part I'm proudest of: it repairs the graph it just failed on
 
 Here's the honest catch I hit on day one. That `column → feature → model` edge, the thing Tether
@@ -77,6 +79,8 @@ It wrote back 2 edges from SQL evidence and **refused 1**, a feature computed in
 transform with no SQL to cite. Delete the repair step and the second run is identical to the
 first. The write-back isn't a receipt; it's the thing that makes the next run better. Run
 `tether bench` and you'll watch the number move.
+
+![The churn_propensity_v4 model's features in DataHub, with discount_sensitivity carrying a tether:inferred tag, the edge Tether recovered from SQL and wrote back, marked so no one mistakes it for a declared fact](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/07-model-features-inferred-tag.png)
 
 ## How this maps to the Production ML Agents track
 
@@ -143,18 +147,20 @@ commit in the history:
 
 ## Results
 
-Screenshots from a live run (more in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens)):
+Four real pull requests on a separate public repo. Three drop a column a serving model reads and
+get blocked; the one that touches nothing merges clean.
 
-- **The blocked PR** — Tether's BLOCK comment (model, owner, incident link) and the failed
-  `tether` check gating the merge button:
-  [01-pr1-blocked-full.jpeg](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/01-pr1-blocked-full.jpeg)
-- **The write-back in DataHub** — the `orders` table's Incidents tab with two **Critical**
-  incidents naming `churn_propensity_v4` and `dynamic_pricing_v2`:
-  [03-orders-incidents-critical.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/03-orders-incidents-critical.png)
-- **The repaired edge** — `discount_sensitivity` carrying the `tether:inferred` tag on the model:
-  [07-model-features-inferred-tag.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/07-model-features-inferred-tag.png)
-- **Four PRs at a glance** — three blocked, one passed:
-  [02-prs-list-3red-1green.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/02-prs-list-3red-1green.png)
+![The pull request list on the demo repo: three PRs with a red failing check, one with a green passing check](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/02-prs-list-3red-1green.png)
+
+The write-back is real, and it lands where a human inherits it. After Tether runs, the `orders`
+table in DataHub carries two **Critical** incidents, each naming the model the change would
+break, each with a Resolve button.
+
+![The orders table's Incidents tab in DataHub showing two Critical incidents: Schema change blocks dynamic_pricing_v2 (orders.quantity) and Schema change blocks churn_propensity_v4 (orders.discount_pct)](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/03-orders-incidents-critical.png)
+
+The full set is in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens):
+the model lineage, the table-to-feature edges Tether repaired, and the institutional-memory links
+it wrote.
 
 ## Accomplishments I'm proud of
 
