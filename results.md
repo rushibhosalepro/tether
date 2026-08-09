@@ -97,9 +97,18 @@ The behaviours every case depends on, each run for real:
 - Write an institutional-memory link → works (on the dataset; OSS rejects a column URN)
 - Cold walk misses a model with no declared edge; after writing the edge, the walk catches it → **the loop works**
 
+## Fails closed, and the loop runs in the product (not just the bench)
+
+- GMS unreachable → verdict **ERROR**, exit code 1, red `error` status. No silent green pass.
+- A miss inside `tether check` triggers repair and the verdict flips PASS → BLOCK, so the loop
+  runs in the shipped command, not only in the benchmark.
+- A model with no declared serving property is treated as live, and the reason string says so,
+  so Tether still blocks on a DataHub that wasn't seeded by us.
+- A table DataHub doesn't catalog is reported as un-assessable, not waved through green.
+
 ---
 
-<sub>Logic checks (not the headline): 34 unit tests pass covering the classifier rules, the
+<sub>Logic checks (not the headline): 40 unit tests pass covering the classifier rules, the
 LLM-can-never-block boundary, the repair-never-guesses boundary, the diff parser (multi-column,
 adds, retypes), report roll-up, and SQL inference across every feature. They prove the code is
 correct; the PRs above prove the system is right.</sub>

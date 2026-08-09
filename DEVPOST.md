@@ -6,6 +6,9 @@ proves it against the SQL, writes it back to DataHub, and stops missing it.
 
 Built for **Build with DataHub: The Agent Hackathon**, Production ML Agents track.
 
+*Gallery tagline:* **Blocks the PR that breaks a production ML model, then writes back to
+DataHub the lineage edge that let the last one through.**
+
 **My thesis: every model Tether missed was a lineage edge nobody wrote down.** So it writes them
 down.
 
@@ -139,7 +142,7 @@ commit in the history:
 - A real loop with a real before/after number (3/6 → 5/6), reproducible in one command.
 - Four real pull requests on a separate public repo, correctly blocked or passed, each with a
   status, a comment, and a DataHub incident.
-- 34 passing tests, including both determinism boundaries.
+- 40 passing tests, including both determinism boundaries.
 - Deployable on any repo via a GitHub Action, with a zero-setup `DEMO_MODE` for anyone who wants
   to try it without standing up DataHub.
 

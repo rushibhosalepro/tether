@@ -6,7 +6,7 @@ Tether blocks the pull request that would break a production ML model. When it m
 finds the lineage edge nobody ever wrote down, proves it against the feature SQL, writes it
 back to DataHub, and stops missing it.
 
-> **Every model this missed was a lineage edge nobody wrote down.**
+**Every model this missed was a lineage edge nobody wrote down.**
 
 > Built for **Build with DataHub: The Agent Hackathon**, Production ML Agents track.
 > Tool repo: this one. Live demo PRs: [tether-demo-warehouse](https://github.com/rushibhosalepro/tether-demo-warehouse/pulls).
@@ -65,9 +65,9 @@ in Python, no SQL to cite). Delete the repair step and the warm run equals the c
 write-back is load-bearing, not decoration. Regenerate this yourself with `tether bench`; the
 report renders to [`examples/report.html`](examples/report.html).
 
-## Two determinism boundaries, both tested
+## Three trust boundaries, all tested
 
-Tether makes two consequential decisions, and neither is left to an LLM:
+Tether makes consequential decisions, and none is left to chance or an LLM:
 
 1. **The LLM never decides to block.** The classifier ([`verdict/classifier.py`](src/tether/verdict/classifier.py))
    is the only thing that can emit `BLOCK`. The model is called in exactly one place, after a
@@ -75,9 +75,13 @@ Tether makes two consequential decisions, and neither is left to an LLM:
 2. **Tether never writes an edge it cannot prove.** The repair infers edges from SQL only
    ([`repair/infer.py`](src/tether/repair/infer.py)); a feature with no SQL is refused and the
    refusal is published. `tests/test_repair_refuses.py`.
+3. **The gate fails closed.** If Tether cannot verify a change, unreachable DataHub, a walk that
+   throws, a parse failure, it returns `ERROR`, not PASS: a red status and a non-zero exit that
+   blocks merge. A green check on a PR it never actually checked is the one thing a gate must
+   never do. `tests/test_fail_closed.py`.
 
 ```bash
-python -m pytest -q      # 34 tests
+python -m pytest -q      # 40 tests
 ```
 
 ## See it on real PRs
@@ -112,7 +116,7 @@ WARM    drop orders.discount_pct   ->  BLOCK  churn_propensity_v4, owner @aman
 Run the tests while you're here (they need the `[dev]` extra above):
 
 ```bash
-python -m pytest -q        # 34 tests
+python -m pytest -q        # 40 tests
 ```
 
 **The full thing** (needs a live DataHub, this is where the write-backs actually happen):
