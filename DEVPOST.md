@@ -1,22 +1,14 @@
-# Tether
-
-**Drop the column, break the model.** Tether blocks the pull request that would break a
-production ML model, and when it misses one, it finds the lineage edge nobody wrote down,
-proves it against the SQL, writes it back to DataHub, and stops missing it.
-
-Built for **Build with DataHub: The Agent Hackathon**, Production ML Agents track.
-
-*Gallery tagline:* **Blocks the PR that breaks a production ML model, then writes back to
-DataHub the lineage edge that let the last one through.**
-
-**My thesis: every model Tether missed was a lineage edge nobody wrote down.** So it writes them
-down.
-
-- Tool repo: https://github.com/rushibhosalepro/tether
-- Live demo PRs: https://github.com/rushibhosalepro/tether-demo-warehouse/pulls
-- Demo video: (coming)
-
----
+<!--
+These go in the Devpost form fields, not the write-up body. Paste the write-up starting at
+"## Inspiration" below.
+  Project name:   Tether
+  Elevator pitch: A column gets dropped, a serving model goes quietly wrong, nobody notices for
+                  weeks. Tether blocks that PR. When it misses one, it writes the missing lineage
+                  edge to DataHub, and stops missing it.
+  Built with:     python, datahub, sqlglot, github-actions, anthropic
+  Try it out:     https://github.com/rushibhosalepro/tether
+                  https://github.com/rushibhosalepro/tether-demo-warehouse/pulls
+-->
 
 ## Inspiration
 
@@ -128,22 +120,15 @@ commit in the history:
 
 ## What this is NOT
 
-- It does **not** guess. If a feature is computed in Python with no SQL to point at, Tether
-  refuses to infer the edge and reports the miss. That's why the number is 5/6, not 6/6.
+- It does **not** guess. A feature computed in Python with no SQL to point at gets refused, and
+  the miss is reported. That's why the number is 5/6, not 6/6.
 - The LLM does **not** decide to block. It's called once, only to *downgrade* a block when the
-  diff itself proves the change is safe. There's a unit test that fails if it ever blocks.
-- It's not a dashboard. The output is a failed PR check and a DataHub incident, not another tab
-  to check.
-- Serving state comes from a model property, not a deployment entity, because OSS DataHub does
-  not expose deployments over GraphQL. Tether reads a configurable property (default `serving`,
-  or mlflow's `stage`), and if an instance declares neither, it treats the model as live and
-  says so in the reason, rather than silently letting the change through.
-- It protects tables DataHub knows about. A change to a table that isn't cataloged is reported
-  as un-assessable, not waved through.
-- OSS DataHub renders incidents on tables, not on ML models (an `incidents` field exists on
-  `Dataset` but not `MLModel`). So Tether files the incident on the affected table and names the
-  model it endangers in the title and body, where the next engineer to touch that table sees it.
-  The model's own before/after is visible on its Lineage tab.
+  diff itself proves the change is safe. A unit test fails if it ever blocks.
+- It's not a dashboard. The output is a failed PR check and a DataHub incident, not another tab.
+- It works within OSS DataHub's limits, honestly. Serving state comes from a model property
+  (OSS hides deployments over GraphQL), unknown means live; incidents are filed on the table,
+  not the model (OSS renders them there); an uncatalogued table is reported un-assessable, not
+  waved through.
 
 ## Results
 
@@ -157,21 +142,16 @@ each naming the model the change would break, each with a Resolve button.
 The full set of screenshots is in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens):
 the PRs, the model lineage, the table-to-feature edges Tether repaired, and the memory links it wrote.
 
-## Accomplishments I'm proud of
-
-- A real loop with a real before/after number (3/6 → 5/6), reproducible in one command.
-- Four real pull requests on a separate public repo, correctly blocked or passed, each with a
-  status, a comment, and a DataHub incident.
-- 40 passing tests, including both determinism boundaries.
-- Deployable on any repo via a GitHub Action, with a zero-setup `DEMO_MODE` for anyone who wants
-  to try it without standing up DataHub.
+It ships with 40 passing tests (both determinism boundaries included) and installs on any repo as
+a GitHub Action, with a zero-setup `DEMO_MODE` for anyone who wants to try it without DataHub.
 
 ## What I learned
 
 The write-back is the whole game. My first version was a clean pipeline that read the graph and
 blocked PRs, and it would have lost, because nothing it wrote made it better at its own job. The
 moment I made Tether repair the lineage it failed on, it stopped being a linter and started being
-an agent that leaves the graph richer than it found it.
+an agent that leaves the graph richer than it found it. Every model it missed was a lineage edge
+nobody wrote down, so now it writes them down.
 
 ## What's next
 
