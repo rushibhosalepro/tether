@@ -1,0 +1,44 @@
+{
+  "data": {
+    "entity": {
+      "relationships": {
+        "relationships": [
+          {
+            "entity": {
+              "urn": "urn:li:mlModel:(urn:li:dataPlatform:mlflow,dynamic_pricing_v2,PROD)",
+              "name": "dynamic_pricing_v2",
+              "properties": {
+                "description": "Sets storefront price multipliers. The one that makes the money.",
+                "customProperties": [
+                  {
+                    "key": "last_trained",
+                    "value": "2026-06-20"
+                  },
+                  {
+                    "key": "seeded_by",
+                    "value": "tether"
+                  },
+                  {
+                    "key": "serving",
+                    "value": "true"
+                  }
+                ]
+              },
+              "ownership": {
+                "owners": [
+                  {
+                    "owner": {
+                      "urn": "urn:li:corpuser:wenjia",
+                      "username": "wenjia"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "extensions": {}
+}

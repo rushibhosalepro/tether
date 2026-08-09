@@ -53,8 +53,19 @@ runs:
         DATAHUB_TOKEN: ${{ inputs.datahub-token }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         TETHER_NO_LLM: ${{ inputs.anthropic-api-key == '' && '1' || '0' }}
+        # so tether can post the commit status + comment onto the PR
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        # no reachable DataHub from CI? replay recorded fixtures instead
+        DEMO_MODE: ${{ inputs.datahub-gms-url == '' && '1' || '0' }}
       run: |
         git diff origin/${{ github.base_ref }}...HEAD -- '${{ inputs.paths }}' > pr.patch
         tether check --diff pr.patch --pr-url "${{ github.event.pull_request.html_url }}" --json > v.json
-        echo "level=$(python -c "import json;print(json.load(open('v.json'))['level'])")" >> $GITHUB_OUTPUT
+        level=$(python -c "import json;print(json.load(open('v.json'))['level'])")
+        echo "level=$level" >> $GITHUB_OUTPUT
         echo "incidents=$(python -c "import json;print(json.dumps(json.load(open('v.json')).get('incidents',[])))")" >> $GITHUB_OUTPUT
+        # fail the job (and thus the required check) when the fail-on level is reached
+        if [ "$level" = "BLOCK" ] && [ "${{ inputs.fail-on }}" != "NEVER" ]; then
+          echo "::error::Tether blocked this PR"; exit 1
+        fi

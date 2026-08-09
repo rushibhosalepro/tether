@@ -1,0 +1,25 @@
+{
+  "data": {
+    "entity": {
+      "relationships": {
+        "relationships": [
+          {
+            "entity": {
+              "urn": "urn:li:mlFeature:(pricing_features,margin_band)",
+              "name": "margin_band",
+              "properties": {
+                "description": "feature computed by features/margin_band.sql",
+                "sources": [
+                  {
+                    "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.public.products,PROD)"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "extensions": {}
+}

@@ -1,0 +1,21 @@
+{
+  "data": {
+    "search": {
+      "searchResults": [
+        {
+          "entity": {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.public.products,PROD)",
+            "name": "products",
+            "platform": {
+              "name": "snowflake"
+            },
+            "properties": {
+              "qualifiedName": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  "extensions": {}
+}
