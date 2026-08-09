@@ -129,6 +129,17 @@ requirement is a DataHub the runner can reach (DataHub Cloud, a self-hosted runn
 network, or a tunnel). No DataHub reachable from CI? Leave `datahub-gms-url` empty and it runs
 in `DEMO_MODE` off recorded fixtures.
 
+Nothing in Tether is specific to this demo: it resolves every dataset and feature from your
+DataHub at runtime and reads your repo's SQL. Two light conventions make the column precision
+and the repair work on your repo:
+
+- **Feature SQL is one file per feature**, in `features-dir`, named to match the `mlFeature` in
+  DataHub (e.g. `discount_sensitivity.sql` ↔ the `discount_sensitivity` feature).
+- **The output column is aliased with the feature name** (`... as discount_sensitivity`), so
+  Tether can trace which source columns feed it.
+
+Given those, Tether points at any DataHub and any repo and works unchanged.
+
 ## Why this needs DataHub specifically
 
 The blast radius of a dropped column is `column → feature → model → deployment`, and that path

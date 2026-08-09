@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..config import settings
-from ..graph.resolve import resolve_dataset
+from ..graph.resolve import resolve_dataset, resolve_feature_urn
 from ..graph.walk import features_of
 from . import infer
 
@@ -54,12 +54,16 @@ def diagnose(table: str, column: str) -> list[LineageGap]:
         looks_unprovable = (not ev.provable) and _py_reads(feature, column)
         if not (reads_column or looks_unprovable):
             continue
+        # the feature already exists in DataHub; find its URN there, not from any local file
+        feature_urn = resolve_feature_urn(feature)
+        if not feature_urn:
+            continue  # no such feature entity in this DataHub, nothing to attach an edge to
         gaps.append(
             LineageGap(
                 column=f"{table}.{column}",
                 dataset_urn=dataset_urn,
                 feature=feature,
-                feature_urn=_feature_urn(feature),
+                feature_urn=feature_urn,
                 evidence=ev.cite() if ev.provable else f"{feature}.py (no SQL)",
                 provable=ev.provable,
             )
@@ -73,14 +77,3 @@ def _py_reads(feature: str, column: str) -> bool:
     if not p.exists():
         return False
     return column.lower() in p.read_text(encoding="utf-8").lower()
-
-
-def _feature_urn(feature: str) -> str:
-    """Reconstruct the feature URN. Table name is recorded in entities.yaml; default here."""
-    import datahub.emitter.mce_builder as b
-    import yaml
-    from pathlib import Path
-
-    spec = yaml.safe_load((Path(settings.features_dir).parents[2] / "seed" / "entities.yaml").read_text("utf-8"))
-    table = next((f["table"] for f in spec["features"] if f["name"] == feature), "customer_churn_features")
-    return b.make_ml_feature_urn(table, feature)

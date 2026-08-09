@@ -23,6 +23,13 @@ inputs:
     description: Glob of files to consider
     required: false
     default: "*.sql"
+  features-dir:
+    description: >
+      Directory in your repo holding the feature-engineering SQL, one file per mlFeature named
+      to match the feature in DataHub (e.g. discount_sensitivity.sql). Tether reads these to get
+      the column precision DataHub's dataset-level ML lineage does not store.
+    required: false
+    default: "features"
   fail-on:
     description: BLOCK or WARN
     required: false
@@ -53,6 +60,7 @@ runs:
         DATAHUB_TOKEN: ${{ inputs.datahub-token }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         TETHER_NO_LLM: ${{ inputs.anthropic-api-key == '' && '1' || '0' }}
+        TETHER_FEATURES_DIR: ${{ github.workspace }}/${{ inputs.features-dir }}
         # so tether can post the commit status + comment onto the PR
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_REPOSITORY: ${{ github.repository }}

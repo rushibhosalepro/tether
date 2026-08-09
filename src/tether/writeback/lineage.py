@@ -41,15 +41,17 @@ def write_source_edge(feature_urn: str, dataset_urn: str, evidence: str) -> None
     )
 
     emitter = _sdk_emitter()
-    existing = _current_sources(feature_urn)
-    sources = sorted(set(existing) | {dataset_urn})
+    props = _current_properties(feature_urn)
+    sources = sorted(set(props["sources"]) | {dataset_urn})
 
+    # preserve the feature's existing description and dataType; only add the source edge, so
+    # Tether never clobbers metadata the user's ML platform already wrote
     emitter.emit(
         MetadataChangeProposalWrapper(
             entityUrn=feature_urn,
             aspect=MLFeaturePropertiesClass(
-                description=f"source inferred by Tether from {evidence}",
-                dataType="CONTINUOUS",
+                description=props["description"],
+                dataType=props["dataType"] or "CONTINUOUS",
                 sources=sources,
             ),
         )
@@ -77,12 +79,18 @@ def write_source_edge(feature_urn: str, dataset_urn: str, evidence: str) -> None
     )
 
 
-def _current_sources(feature_urn: str) -> list[str]:
+def _current_properties(feature_urn: str) -> dict:
+    """Read the feature's existing properties so a repair preserves, not overwrites, them."""
     from ..datahub_client import client
 
-    q = """query($u:String!){ mlFeature(urn:$u){ properties{ sources{ urn } } } }"""
+    q = """query($u:String!){ mlFeature(urn:$u){ properties{ description dataType sources{ urn } } } }"""
     try:
         d = client().graphql(q, {"u": feature_urn})
-        return [s["urn"] for s in (((d or {}).get("mlFeature") or {}).get("properties") or {}).get("sources") or []]
+        p = ((d or {}).get("mlFeature") or {}).get("properties") or {}
+        return {
+            "description": p.get("description"),
+            "dataType": p.get("dataType"),
+            "sources": [s["urn"] for s in (p.get("sources") or [])],
+        }
     except Exception:
-        return []
+        return {"description": None, "dataType": None, "sources": []}

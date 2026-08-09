@@ -61,6 +61,30 @@ def resolve_dataset(table: str, platform: str = "snowflake") -> str | None:
     return (suffix or pool)[0]["urn"]
 
 
+FEATURE_SEARCH = """
+query resolveFeature($q: String!) {
+  search(input: {type: MLFEATURE, query: $q, start: 0, count: 20}) {
+    searchResults { entity { urn ... on MLFeature { name } } }
+  }
+}
+"""
+
+
+@lru_cache(maxsize=512)
+def resolve_feature_urn(name: str) -> str | None:
+    """Find an mlFeature's URN in DataHub by its name. Works on any DataHub, no local files.
+
+    The feature already exists in the user's graph (their ML platform emitted it); Tether just
+    needs its URN to attach a repaired source edge. Matched on exact name.
+    """
+    data = client().graphql(FEATURE_SEARCH, {"q": name})
+    for r in data["search"]["searchResults"]:
+        e = r["entity"]
+        if (e.get("name") or "").lower() == name.lower():
+            return e["urn"]
+    return None
+
+
 def resolve_column(table: str, column: str) -> str | None:
     ds = resolve_dataset(table)
     return schema_field_urn(ds, column) if ds else None
