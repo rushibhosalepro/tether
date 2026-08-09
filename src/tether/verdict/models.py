@@ -16,6 +16,7 @@ class ChangeKind(str, Enum):
 
 class Level(str, Enum):
     BLOCK = "BLOCK"
+    ERROR = "ERROR"  # Tether could not determine impact (unreachable graph, parse failure). Fails closed.
     WARN = "WARN"
     PASS = "PASS"
 
@@ -57,6 +58,7 @@ class Impact:
     owners: list[str] = field(default_factory=list)
     last_trained: str | None = None  # ISO8601
     hops: list[str] = field(default_factory=list)  # the URN path, column -> ... -> model
+    serving_assumed: bool = False  # True when deployment state was unknown and defaulted to live
 
     @property
     def is_live(self) -> bool:
@@ -92,9 +94,16 @@ class Report:
     def level(self) -> Level:
         if any(v.level is Level.BLOCK for v in self.verdicts):
             return Level.BLOCK
+        if any(v.level is Level.ERROR for v in self.verdicts):
+            return Level.ERROR  # couldn't verify: fail closed, never green
         if any(v.level is Level.WARN for v in self.verdicts):
             return Level.WARN
         return Level.PASS
+
+    @property
+    def fails_check(self) -> bool:
+        """A gate must go red on a real block AND when it could not verify."""
+        return self.level in (Level.BLOCK, Level.ERROR)
 
     @property
     def blocked_models(self) -> list[Impact]:

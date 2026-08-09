@@ -116,17 +116,24 @@ def ml_impacts(dataset_urn: str, column: str | None = None, max_results: int = 5
     for feat in features_of(dataset_urn, max_results):
         if not _column_used_by(feat, column):
             continue
-        feat_urn = feat["urn"]
-        feat_name = feat.get("name", "")
-        data = client().graphql(MODELS_FROM_FEATURE, {"urn": feat_urn, "count": max_results})
-        rels = (((data or {}).get("entity") or {}).get("relationships") or {}).get("relationships") or []
-        for r in rels:
-            m = r["entity"]
-            if m["urn"] in impacts:
-                continue
-            props = _props(m)
-            serving = props.get("serving") == "true"
-            impacts[m["urn"]] = Impact(
+        for imp in models_of_feature(feat["urn"], feat.get("name", ""), dataset_urn, max_results):
+            impacts.setdefault(imp.model_urn, imp)
+    return list(impacts.values())
+
+
+def models_of_feature(feat_urn: str, feat_name: str, dataset_urn: str, max_results: int = 50) -> list[Impact]:
+    """The serving models that consume one feature. Used by the walk and, after a repair, to
+    build impacts from the just-repaired feature directly, without waiting for the freshly
+    written dataset->feature edge to finish indexing."""
+    data = client().graphql(MODELS_FROM_FEATURE, {"urn": feat_urn, "count": max_results})
+    rels = (((data or {}).get("entity") or {}).get("relationships") or {}).get("relationships") or []
+    out: list[Impact] = []
+    for r in rels:
+        m = r["entity"]
+        props = _props(m)
+        serving, assumed = _is_serving(props)
+        out.append(
+            Impact(
                 model_urn=m["urn"],
                 model_name=m.get("name") or m["urn"].split(",")[-2],
                 feature_urn=feat_urn,
@@ -136,5 +143,27 @@ def ml_impacts(dataset_urn: str, column: str | None = None, max_results: int = 5
                 owners=_owners(m),
                 last_trained=props.get("last_trained"),
                 hops=[dataset_urn, feat_urn, m["urn"]],
+                serving_assumed=assumed,
             )
-    return list(impacts.values())
+        )
+    return out
+
+
+def _is_serving(props: dict[str, str]) -> tuple[bool, bool]:
+    """(is_serving, assumed). Conservative: if we cannot tell, assume live and flag it.
+
+    OSS DataHub does not expose deployment entities over GraphQL, so serving state comes from a
+    model property. We check, in order: a configurable property (TETHER_SERVING_PROPERTY,
+    default `serving`), then mlflow's `stage`. If none is present we do NOT clear the block,
+    because a false negative on a live model is the expensive error. Blocking is the whole verb;
+    it must not switch itself off just because an instance labels deployment differently.
+    """
+    from ..config import settings
+
+    key = settings.serving_property
+    if key in props:
+        return props[key].strip().lower() in ("true", "yes", "production", "serving", "in_service"), False
+    stage = (props.get("stage") or props.get("mlflow.stage") or "").strip().lower()
+    if stage:
+        return stage in ("production", "serving", "staging_production"), False
+    return True, True  # unknown deployment state -> treat as live, and say so in the reason

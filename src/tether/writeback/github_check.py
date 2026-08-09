@@ -21,6 +21,9 @@ def summary_markdown(report: Report, incident_urns: list[str]) -> str:
 
     if report.level is Level.PASS:
         return "No production ML model consumes any column changed in this PR."
+    if report.level is Level.ERROR:
+        reasons = "\n".join(f"- {v.reason}" for v in report.verdicts if v.level is Level.ERROR)
+        return "**Tether could not verify this PR and is failing closed.**\n\n" + reasons
 
     lines = ["| Column | Change | Model | Deployment | Owner | Last trained |", "|---|---|---|---|---|---|"]
     for v in report.verdicts:
@@ -68,10 +71,13 @@ def post_check(report: Report, incident_urns: list[str], sha: str | None = None)
         return None
 
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    state = {"BLOCK": "failure", "WARN": "success", "PASS": "success"}[report.level.value]
+    # ERROR -> "error" and BLOCK -> "failure": both go red and gate merge. Tether never shows
+    # green when it could not verify.
+    state = {"BLOCK": "failure", "ERROR": "error", "WARN": "success", "PASS": "success"}[report.level.value]
     n = len(report.blocked_models)
     desc = {
         "BLOCK": f"{n} production model(s) still read a column this PR changes",
+        "ERROR": "Tether could not verify ML impact; failing closed",
         "WARN": "Schema change touches ML lineage, review before merge",
         "PASS": "No production ML impact",
     }[report.level.value][:140]
@@ -99,7 +105,7 @@ def _upsert_comment(repo: str, report: Report, incident_urns: list[str], headers
     if not pr_number.isdigit():
         return
     marker = "<!-- tether -->"
-    icon = {"BLOCK": "🔴", "WARN": "🟡", "PASS": "🟢"}[report.level.value]
+    icon = {"BLOCK": "🔴", "ERROR": "🟠", "WARN": "🟡", "PASS": "🟢"}[report.level.value]
     body = f"{marker}\n## {icon} Tether: {report.level.value}\n\n" + summary_markdown(report, incident_urns)
 
     listing = requests.get(f"{API}/repos/{repo}/issues/{pr_number}/comments", headers=headers, timeout=30)

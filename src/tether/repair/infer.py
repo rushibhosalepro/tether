@@ -48,7 +48,15 @@ def infer(feature: str) -> Evidence:
     sql = path.read_text(encoding="utf-8")
     cols = _columns_from_sql(sql, feature)
     line = _first_line(sql, cols)
-    return Evidence(feature, cols, str(path.relative_to(settings.features_dir.parents[2])), line, provable=bool(cols))
+    return Evidence(feature, cols, _cite_path(path), line, provable=bool(cols))
+
+
+def _cite_path(path) -> str:
+    """A short, repo-relative-ish path for the evidence citation, robust to any features_dir."""
+    try:
+        return str(path.relative_to(settings.features_dir.parent))
+    except ValueError:
+        return path.name
 
 
 def _columns_from_sql(sql: str, feature: str) -> set[str]:

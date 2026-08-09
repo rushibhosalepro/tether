@@ -17,7 +17,10 @@ def cmd_check(args) -> int:
     from .writeback.github_check import summary_markdown
 
     diff_text = Path(args.diff).read_text(encoding="utf-8") if args.diff else sys.stdin.read()
-    report, column_urns = run(diff_text, args.pr_url, arm=args.arm, use_llm=not args.no_llm)
+    # a real run (not dry) repairs on a miss: that is the loop, in the product not just the bench
+    report, column_urns = run(
+        diff_text, args.pr_url, arm=args.arm, use_llm=not args.no_llm, repair=not args.dry_run
+    )
 
     result = {"incidents": [], "check_url": None}
     if not args.dry_run:
@@ -30,7 +33,8 @@ def cmd_check(args) -> int:
         print(f"tether: {report.level.value}")
         print(summary_markdown(report, result.get("incidents") or []))
 
-    return EXIT_BLOCK if report.level is Level.BLOCK else 0
+    # fail closed: red on a real block AND when Tether could not verify
+    return EXIT_BLOCK if report.fails_check else 0
 
 
 def cmd_seed(args) -> int:

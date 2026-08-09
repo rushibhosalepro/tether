@@ -41,6 +41,9 @@ class Settings:
     # where the feature-engineering SQL lives. Tether reads this (not the graph) to get the
     # column precision DataHub's dataset-level ML lineage does not store.
     features_dir: Path = Path(os.getenv("TETHER_FEATURES_DIR", str(ROOT / "demo" / "warehouse" / "features")))
+    # the model custom-property that marks a model as serving. OSS GraphQL hides deployment
+    # entities, so serving state is read from a property; configurable per DataHub instance.
+    serving_property: str = os.getenv("TETHER_SERVING_PROPERTY", "serving")
 
     # github
     gh_token: str = os.getenv("GITHUB_TOKEN", "")

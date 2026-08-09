@@ -114,6 +114,10 @@ commit in the history:
   "serving" signal is a model property and incident de-duplication is a local cache.
 - **GitHub check runs require a GitHub App.** A user token gets a flat 403. The fix is a commit
   status, which works with a normal token and greys out merge the same way.
+- **A gate must fail closed.** An early version returned PASS when it could not reach DataHub or
+  parse a diff, which is the worst failure a merge gate can have: a green check on an unchecked
+  PR. Now an unverifiable change is `ERROR`, goes red, and blocks merge, the same direction the
+  LLM fence fails.
 
 ## What this is NOT
 
@@ -123,6 +127,12 @@ commit in the history:
   diff itself proves the change is safe. There's a unit test that fails if it ever blocks.
 - It's not a dashboard. The output is a failed PR check and a DataHub incident, not another tab
   to check.
+- Serving state comes from a model property, not a deployment entity, because OSS DataHub does
+  not expose deployments over GraphQL. Tether reads a configurable property (default `serving`,
+  or mlflow's `stage`), and if an instance declares neither, it treats the model as live and
+  says so in the reason, rather than silently letting the change through.
+- It protects tables DataHub knows about. A change to a table that isn't cataloged is reported
+  as un-assessable, not waved through.
 
 ## Accomplishments I'm proud of
 

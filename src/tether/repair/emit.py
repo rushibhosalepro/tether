@@ -16,7 +16,8 @@ from ..config import settings
 from ..writeback.lineage import write_source_edge
 from .diagnose import LineageGap
 
-REFUSALS = Path(__file__).with_name("refusals.jsonl")
+# runtime output belongs next to the ledger (repo root / configurable), never in the package dir
+REFUSALS = settings.ledger_path.with_name("refusals.jsonl")
 
 
 @dataclass

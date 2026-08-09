@@ -17,8 +17,8 @@ Tether repaired the lineage edges it found missing.
 
 ## Edges repaired
 
-- discount_sensitivity <- analytics.public.orders (demo\warehouse\features\discount_sensitivity.sql:5)
-- demand_index_7d <- analytics.public.orders (demo\warehouse\features\demand_index_7d.sql:5)
+- discount_sensitivity <- analytics.public.orders (features\discount_sensitivity.sql:5)
+- demand_index_7d <- analytics.public.orders (features\demand_index_7d.sql:5)
 
 ## Refused (no SQL to prove the edge)
 

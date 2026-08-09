@@ -53,6 +53,10 @@ def classify(change: ColumnChange, impacts: list[Impact]) -> Verdict:
         )
 
     names = ", ".join(sorted({i.model_name for i in live or reached}))
+    # honesty clause: if any live model's deployment state was unknown and we assumed live
+    assumed = " (deployment state not declared in DataHub; treated as live)" if any(
+        i.serving_assumed for i in live
+    ) else ""
 
     # R1: dropping a column a live model is serving from.
     if change.kind is ChangeKind.DROP and live:
@@ -62,7 +66,7 @@ def classify(change: ColumnChange, impacts: list[Impact]) -> Verdict:
             impacts=live,
             reason=(
                 f"{change.label()} is a declared input to {len(live)} model(s) currently "
-                f"in production: {names}."
+                f"in production: {names}.{assumed}"
             ),
             rule_id="R1",
         )
