@@ -147,20 +147,15 @@ commit in the history:
 
 ## Results
 
-Four real pull requests on a separate public repo. Three drop a column a serving model reads and
-get blocked; the one that touches nothing merges clean.
-
-![The pull request list on the demo repo: three PRs with a red failing check, one with a green passing check](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/02-prs-list-3red-1green.png)
-
-The write-back is real, and it lands where a human inherits it. After Tether runs, the `orders`
-table in DataHub carries two **Critical** incidents, each naming the model the change would
-break, each with a Resolve button.
+Four real pull requests on a separate public repo: three drop a column a serving model reads and
+get blocked, the one that touches nothing merges clean. And the write-back lands where a human
+inherits it, after Tether runs, the `orders` table in DataHub carries two **Critical** incidents,
+each naming the model the change would break, each with a Resolve button.
 
 ![The orders table's Incidents tab in DataHub showing two Critical incidents: Schema change blocks dynamic_pricing_v2 (orders.quantity) and Schema change blocks churn_propensity_v4 (orders.discount_pct)](https://raw.githubusercontent.com/rushibhosalepro/tether/main/examples/screens/03-orders-incidents-critical.png)
 
-The full set is in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens):
-the model lineage, the table-to-feature edges Tether repaired, and the institutional-memory links
-it wrote.
+The full set of screenshots is in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens):
+the PRs, the model lineage, the table-to-feature edges Tether repaired, and the memory links it wrote.
 
 ## Accomplishments I'm proud of
 
