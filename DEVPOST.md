@@ -1,128 +1,163 @@
-# Tether — Devpost submission
+# Tether
 
-**Challenge:** Production ML Agents
+**Drop the column, break the model.** Tether blocks the pull request that would break a
+production ML model, and when it misses one, it finds the lineage edge nobody wrote down,
+proves it against the SQL, writes it back to DataHub, and stops missing it.
 
-## Tagline
+Built for **Build with DataHub: The Agent Hackathon** — Production ML Agents track.
 
-Tether blocks the pull request that would break a production ML model, and when it misses one,
-it finds the lineage edge nobody wrote down, proves it against the feature SQL, writes it back
-to DataHub, and stops missing it.
+- Tool repo: https://github.com/rushibhosalepro/tether
+- Live demo PRs: https://github.com/rushibhosalepro/tether-demo-warehouse/pulls
+- Demo video: (coming)
 
 ---
 
-## The problem
+## Inspiration
 
-A broken pipeline throws an error. A broken model does not. It stays technically up and
-functionally wrong, serving predictions from a column that someone dropped last Friday, while
-every dashboard stays green. Finding which production models still read a deprecated column is,
-in the words of the practitioners we researched, "an investigative nightmare."
+It's 4pm on a Friday. Someone opens a two-line PR that deletes a column called `discount_pct`
+from the `orders` table. It's not used in any dashboard, the dbt tests pass, so it gets merged.
 
-The reason it is hard is structural. The blast radius you need to trace is
-`column → feature → model → deployment`, and that path is almost never populated: only four ML
-connectors write it, and the training-data edge is essentially never automatic. So the honest
-day-one state of a real DataHub is models whose inputs nobody ever declared. Impact analysis
-can't warn you about an edge that isn't there.
+Nothing breaks. That's the problem.
+
+Three months ago, a model called `churn_propensity_v4` was trained on a feature built from that
+column. It's serving right now, deciding who gets retention emails. The column is gone, so the
+feature is null, so the model is quietly wrong. No error. No alert. No red dashboard. Just
+predictions that are a little worse every day, and a revenue line that dips for a reason nobody
+can find for three weeks.
+
+We kept reading the same sentence in our research: figuring out which production models still
+read a deprecated column is "an investigative nightmare." We wanted the nightmare to be a failing
+check on the PR that caused it, before anyone hits merge.
 
 ## What it does
 
-Tether runs on every pull request that touches a `.sql` file. It parses the diff into
-column-level changes, resolves each column to a DataHub dataset, and walks the graph forward,
-past the dashboards where everyone else stops, into `mlFeature → mlModel → deployment`. It gets
-column precision the graph doesn't store by reading the feature-engineering SQL directly. Then
-a deterministic classifier decides, and Tether acts:
+Tether runs on every pull request that touches a `.sql` file.
 
-- fails the `tether` commit status, which greys out the merge button,
-- comments on the PR naming the model, its owner, and the incident,
-- raises a `DATA_SCHEMA` incident on the model entity in DataHub.
+1. It parses the diff into column-level changes (drop, rename, retype).
+2. It walks DataHub lineage forward from each changed column, past the dashboards where everyone
+   else stops, into `mlFeature → mlModel → deployment`.
+3. It gets column precision the graph doesn't store by **reading the feature SQL** to see which
+   columns each feature actually reads.
+4. A deterministic classifier decides BLOCK, WARN, or PASS.
+5. If a serving model still reads the column, it **fails the PR's `tether` status** (greying out
+   the merge button), comments naming the model and its owner, and **files a `DATA_SCHEMA`
+   incident on the model in DataHub**.
 
-And here is the part that makes it an agent and not a linter: **when the walk misses because the
-edge was never declared, Tether repairs the graph.** It diagnoses the gap, infers the missing
-`column → feature` edge from the feature SQL, and writes it back to DataHub tagged
-`tether:inferred` with the SQL `file:line` as evidence. The next walk, the next engineer, and
-the next agent all inherit it.
+So the dependency that used to live in one senior engineer's head is now a check on the PR and a
+first-class incident the next person inherits.
 
-## The number
+## The part we're proudest of: it repairs the graph it just failed on
 
-Same PRs, same code, on a live graph. The only difference is whether Tether repaired the
-lineage first.
+Here's the honest catch we hit on day one. That `column → feature → model` edge, the thing Tether
+needs to walk? **Almost nobody populates it.** Only four ML connectors write it, and the
+training-data edge is essentially never automatic. So a real DataHub has models whose inputs were
+never declared, and impact analysis can't warn you about an edge that isn't there.
 
-- **Cold graph: 3 of 6 breakages caught.**
-- **After Tether repaired the graph: 5 of 6.**
-- It repaired 2 edges from SQL evidence and **refused 1** it could not prove.
+Most tools would shrug. Tether repairs it. When the walk comes up empty, Tether:
 
-Delete the repair step and the warm run is byte-identical to the cold run. The write-back is
-load-bearing, not decoration. `tether bench` regenerates this end-to-end against a live DataHub.
+- **diagnoses** the miss: a feature's SQL reads the column, but the graph has no edge for it,
+- **infers** the missing edge from the feature SQL with sqlglot, keeping the exact `file:line` as
+  evidence,
+- **writes it back** to DataHub tagged `tether:inferred`, so the next walk catches it,
+- **refuses** any edge it can't point at a SQL expression for.
 
-The one it still misses is a feature computed in a Python transform, with no SQL for Tether to
-point at. It refuses to invent an edge it cannot prove, and reports the miss. That refusal is
-the honest failure, framed as the design principle it is: **Tether never writes a lineage edge
-it cannot cite.**
+We measured it the only way that means anything: same PRs, same code, on a live graph, with and
+without the repair.
 
-## How we used DataHub
+- **Cold graph: it caught 3 of 6 breakages.**
+- **After it repaired the graph: 5 of 6.**
 
-DataHub is not a step in the middle; it is where the output lives. Tether:
+It wrote back 2 edges from SQL evidence and **refused 1** — a feature computed in a Python
+transform with no SQL to cite. Delete the repair step and the second run is identical to the
+first. The write-back isn't a receipt; it's the thing that makes the next run better. Run
+`tether bench` and you'll watch the number move.
 
-- reads the graph over GraphQL (the relationships API: `DerivedFrom`, then `Consumes`),
-- raises real incidents on `mlModel` entities,
-- writes `institutionalMemory` links recording each dependency and PR,
-- **writes new lineage edges back** (`MLFeatureProperties.sources`), which is the load-bearing
-  contribution: the graph is strictly richer after Tether runs than before.
+## How this maps to the Production ML Agents track
 
-The whole thing only works because `column → feature → model → deployment` lives in one graph in
-DataHub and nowhere else. Swap DataHub for a dbt manifest and the ML half of the walk cannot
-exist, because dbt's graph has no concept of a model.
+| The track asks for | Where Tether does it |
+|---|---|
+| Uses DataHub's end-to-end ML lineage | walks `dataset → mlFeature → mlModel → deployment` over the relationships API |
+| Catches silent problems before they cost money | blocks the PR before a serving model loses an input |
+| Writes results back so the next person inherits them | files an incident on the model, writes lineage edges + institutional memory |
+| Goes beyond reading metadata | the inferred lineage edge makes the graph strictly richer after it runs |
 
-## Originality
+## How we built it
 
-Two things we did not find anywhere else in the galleries we researched:
+| Layer | Choice |
+|---|---|
+| Agent | Python, one readable pipeline: parse → walk → classify → write back |
+| DataHub | OSS quickstart; GraphQL for reads/incidents, Python SDK for emitting lineage |
+| Lineage precision | sqlglot, to recover a feature's source columns from its SQL |
+| Gate | GitHub commit status + PR comment (posted by the agent) |
+| LLM | one optional Anthropic call, fenced so it can only ever *downgrade* a block |
 
-1. **The write-back is a repair, not a report.** Most agents write a note a human reads. Tether
-   writes the structural edge that makes its own next run better, which is the exact "loop" the
-   winners had and the losers didn't.
-2. **A stated, tested refusal.** Tether has two determinism boundaries, both unit-tested: the
-   LLM can never originate a block, and the repair can never write an edge without SQL evidence.
-   The failure number is a feature.
+DataHub isn't a step in the middle here; it's where the output lives. The graph is richer after
+Tether runs (new incidents, new lineage edges), and you can see the before/after on the model's
+own page.
 
-## Challenges we ran into (all real, all in the repo history)
+## Challenges we ran into
 
-Building against OSS DataHub taught us what the docs don't:
-- an `mlFeature` rejects `upstreamLineage`, so ML lineage is dataset-level and column precision
-  has to come from the SQL;
-- `searchAcrossLineage` won't traverse from a dataset, so the walk uses the relationships API;
-- deployment entities and an entity's incidents aren't exposed over OSS GraphQL, so the serving
-  signal is a model property and incident idempotency is a local cache;
-- GitHub check runs require a GitHub App, so the merge gate is a commit status (works with a
-  normal token, gates merge the same way).
+Building against OSS DataHub taught us what the docs don't, and every one of these is a real
+commit in the history:
 
-Every one of these is fixed in the code and recorded in `results.md`.
+- **An `mlFeature` rejects an `upstreamLineage` aspect.** We assumed we could attach column-level
+  lineage to a feature. You can't. ML lineage is dataset-level, so we get column precision from
+  the SQL instead. This actually made the story better: reading the code is exactly what a human
+  would do.
+- **`searchAcrossLineage` returns nothing from a dataset.** The walk looked broken until we
+  switched to the relationships API (`DerivedFrom`, then `Consumes`), which is deterministic and
+  immediate.
+- **Deployment entities and an entity's incidents aren't exposed over OSS GraphQL.** So the
+  "serving" signal is a model property and incident de-duplication is a local cache.
+- **GitHub check runs require a GitHub App.** A user token gets a flat 403. The fix is a commit
+  status, which works with a normal token and greys out merge the same way.
 
-## Accomplishments
+## What this is NOT
 
-- A real loop with a real number (3/6 → 5/6) on a live graph, reproducible in one command.
+- It does **not** guess. If a feature is computed in Python with no SQL to point at, Tether
+  refuses to infer the edge and reports the miss. That's why the number is 5/6, not 6/6.
+- The LLM does **not** decide to block. It's called once, only to *downgrade* a block when the
+  diff itself proves the change is safe. There's a unit test that fails if it ever blocks.
+- It's not a dashboard. The output is a failed PR check and a DataHub incident, not another tab
+  to check.
+
+## Accomplishments we're proud of
+
+- A real loop with a real before/after number (3/6 → 5/6), reproducible in one command.
 - Four real pull requests on a separate public repo, correctly blocked or passed, each with a
   status, a comment, and a DataHub incident.
 - 34 passing tests, including both determinism boundaries.
-- Deployable on any repo via a GitHub Action, with a zero-infrastructure `DEMO_MODE` for anyone
-  who wants to try it without standing up DataHub.
+- Deployable on any repo via a GitHub Action, with a zero-setup `DEMO_MODE` for anyone who wants
+  to try it without standing up DataHub.
+
+## What we learned
+
+The write-back is the whole game. Our first version was a clean pipeline that read the graph and
+blocked PRs, and it would have lost, because nothing it wrote made it better at its own job. The
+moment we made Tether repair the lineage it failed on, it stopped being a linter and started being
+an agent that leaves the graph richer than it found it.
+
+## What's next
+
+- Watch a merged-anyway PR's next scoring run and record whether the model actually broke, to
+  score predictions against outcomes over time.
+- Promote a `tether:inferred` edge to declared once a human confirms it.
+- Ship the incident write-back as the DataHub Python SDK incidents module the docs list as
+  "coming soon."
 
 ## Open-source contribution
 
-Tether's incident write-back is a working Python module for raising DataHub incidents over
-GraphQL, which the docs currently list as "Python SDK support coming soon." We're offering it
-upstream, along with the ML-layer seed as a reusable datapack.
-
-## Try it
-
-- Zero infra: `DEMO_MODE=1 tether check --diff bench/cases/001-drop-orders-discount-pct/diff.patch`
-- Full loop: `bash scripts/quickstart.sh` then `tether bench`
-- Live PRs: https://github.com/rushibhosalepro/tether-demo-warehouse/pulls
+Tether's incident code is a working Python module for raising DataHub incidents over GraphQL,
+which the docs currently list as "Python SDK support coming soon." We're offering it upstream,
+plus the ML-layer seed as a reusable datapack.
 
 ## Built with
 
-Python, DataHub (OSS quickstart, GraphQL + Python SDK), sqlglot, GitHub Actions, Anthropic
-(one optional call, fenced so it can never block).
+Python, DataHub (OSS, GraphQL + Python SDK), sqlglot, GitHub Actions, Anthropic.
 
-## Repos
+## Try it out
 
-- Tool: https://github.com/rushibhosalepro/tether
-- Demo warehouse (the PRs): https://github.com/rushibhosalepro/tether-demo-warehouse
+- **Zero setup:** `DEMO_MODE=1 tether check --diff bench/cases/001-drop-orders-discount-pct/diff.patch`
+- **The full loop:** `bash scripts/quickstart.sh` then `tether bench`
+- **Real PRs:** https://github.com/rushibhosalepro/tether-demo-warehouse/pulls
+- **Code:** https://github.com/rushibhosalepro/tether
