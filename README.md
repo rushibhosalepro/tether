@@ -2,139 +2,164 @@
 
 **Drop the column, break the model.**
 
-An agent that cannot block on a hunch: Tether parses your unmerged schema diff, walks
-DataHub lineage past the dashboards into production ML models, fails the PR check with the
-model owner named, and files the dependency back into DataHub as an incident on the model
-and a permanent record on the column.
+Tether blocks the pull request that would break a production ML model. When it misses one, it
+finds the lineage edge nobody ever wrote down, proves it against the feature SQL, writes it
+back to DataHub, and stops missing it.
 
 > Built for **Build with DataHub: The Agent Hackathon**, Production ML Agents track.
+> Tool repo: this one. Live demo PRs: [tether-demo-warehouse](https://github.com/rushibhosalepro/tether-demo-warehouse/pulls).
 
 ---
 
 ## The problem
 
 A broken pipeline throws. A broken model does not. It stays technically up and functionally
-wrong, serving predictions from a column that stopped meaning what it meant, while every
-dashboard stays green.
+wrong, serving predictions from a column that was dropped last Friday, while every dashboard
+stays green.
 
-Impact analysis is supposed to catch this, and it stops at the BI layer, because that is
-where most metadata graphs stop. Ask a data engineer which production models read
-`orders.discount_pct` and the honest answer is usually that finding out is an afternoon of
-grep.
+Impact analysis is supposed to catch this, and it stops at the BI layer, because that is where
+most metadata graphs stop. Worse, the part of the graph you would need, the edge from a column
+to the feature to the model, is the part almost nobody populates. Only four ML connectors
+populate it at all, and the training-data edge is essentially never automatic. So the honest
+day-one state of a real DataHub is: **models whose inputs nobody declared.**
 
 ## What Tether does
 
+On every pull request that changes a `.sql` file:
+
 ```
-PR touches a .sql file
-  └─ parse the diff into column-level changes (drop, rename, retype, semantic)
-      └─ resolve each column to a DataHub schemaField URN
-          └─ walk lineage FORWARD, past datasets, past dashboards
-              └─ into mlFeature -> mlModel -> mlModelDeployment
-                  └─ deterministic classifier decides BLOCK / WARN / PASS
-                      ├─ fail the required GitHub check, owners named
-                      ├─ raiseIncident (DATA_SCHEMA) on the model entity
-                      └─ institutionalMemory link on the column, pointing at the PR
+parse the diff into column-level changes (drop / rename / retype)
+  └─ resolve each column's table to a DataHub dataset
+      └─ walk the graph: dataset ─DerivedFrom→ mlFeature ─Consumes→ mlModel ─→ deployment
+          └─ column precision: read the feature SQL to see which columns each feature reads
+              └─ deterministic classifier decides BLOCK / WARN / PASS
+                  ├─ fail the `tether` commit status (greys out merge)
+                  ├─ comment on the PR with the model, its owner, and the incident link
+                  └─ raise a DATA_SCHEMA incident on the model in DataHub
 ```
 
-The incident gets resolved when the model is retrained. The link on the column does not go
-away, which is the point: the next person to touch that column inherits the dependency
-without having to rediscover it.
+And when the walk misses, because the dataset→feature edge was never declared, Tether repairs
+it instead of shrugging:
+
+```
+diagnose  the miss: a feature's SQL reads the column, but the graph has no edge for it
+  └─ infer   the edge from the feature SQL (sqlglot), with the file:line as evidence
+      └─ write it back to DataHub, tagged tether:inferred, so the next walk catches it
+          └─ refuse any edge it cannot point at a SQL expression for
+```
 
 ## The number
 
-Same agent, same PRs, one difference: what it is allowed to look at.
+Same PRs, same code, on a live graph. The only difference is whether Tether repaired the
+lineage first.
 
-| Arm | Sees | Recall on real breakages |
+| | Breakages caught |
+|---|---|
+| Cold graph (edges undeclared) | **3 / 6** |
+| After Tether repaired the graph | **5 / 6** |
+
+It repaired 2 edges from SQL evidence and **refused 1** it could not prove (a feature computed
+in Python, no SQL to cite). Delete the repair step and the warm run equals the cold run: the
+write-back is load-bearing, not decoration. Regenerate this yourself with `tether bench`; the
+report renders to [`examples/report.html`](examples/report.html).
+
+## Two determinism boundaries, both tested
+
+Tether makes two consequential decisions, and neither is left to an LLM:
+
+1. **The LLM never decides to block.** The classifier ([`verdict/classifier.py`](src/tether/verdict/classifier.py))
+   is the only thing that can emit `BLOCK`. The model is called in exactly one place, after a
+   block, and can only ever *downgrade* it to a warning. `tests/test_llm_cannot_block.py`.
+2. **Tether never writes an edge it cannot prove.** The repair infers edges from SQL only
+   ([`repair/infer.py`](src/tether/repair/infer.py)); a feature with no SQL is refused and the
+   refusal is published. `tests/test_repair_refuses.py`.
+
+```bash
+python -m pytest -q      # 34 tests
+```
+
+## See it on real PRs
+
+Four real pull requests on a separate public repo, each judged against a live DataHub:
+
+| PR | Change | Tether |
 |---|---|---|
-| `datahub` | Full lineage, column → feature → model → deployment | see `bench/results/REPORT.md` |
-| `dbt-only` | `manifest.json`, full `child_map` traversal | see `bench/results/REPORT.md` |
+| [#1](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/1) | drop `orders.discount_pct` | 🔴 blocks `churn_propensity_v4` (@aman) |
+| [#2](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/2) | drop `orders.quantity` | 🔴 blocks `dynamic_pricing_v2` (@wenjia) |
+| [#3](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/3) | drop `products.unit_cost` | 🔴 blocks `dynamic_pricing_v2` |
+| [#4](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/4) | drop `orders.status` | 🟢 no ML impact, safe to merge |
 
-The control arm is not a strawman. It walks the entire dbt graph. It finds zero model
-dependencies because dbt's graph has no `mlFeature`, `mlModel` or `mlModelDeployment` in it
-to find. That structural blindness is the finding.
+## Try it
 
-Every miss is named in the report. `examples/report.html` renders it with no server.
-
-## The determinism boundary
-
-The LLM never decides to block.
-
-The classifier in `src/tether/verdict/classifier.py` is the only thing that can produce
-`BLOCK`, from the rules written out in `src/tether/verdict/rules.md`. The model is called in
-exactly one place, after a block has already been decided, and asked whether the diff
-contains explicit evidence the change is safe. It can turn `BLOCK` into `WARN`. It cannot do
-the reverse, it cannot invent an impact, and if it times out or returns prose the block
-stands.
-
-That is not a promise in a README. It is `tests/test_llm_cannot_block.py`:
+**Zero infrastructure** (replays recorded DataHub responses, no Docker):
 
 ```bash
-python -m pytest tests/test_llm_cannot_block.py -v
-```
-
-## Quickstart
-
-```bash
-bash scripts/quickstart.sh
-```
-
-Windows: `powershell -File scripts/quickstart.ps1`
-
-That runs `datahub docker quickstart`, loads `showcase-ecommerce` (1,049 entities), emits
-the ML layer this project needs, and installs the CLI. Roughly six minutes, most of it
-Docker pulling images.
-
-Then:
-
-```bash
-tether check --diff bench/cases/001-drop-orders-discount-pct/diff.patch --pr-url local
-```
-
-No Docker? Everything runs from recorded fixtures:
-
-```bash
+pip install -e .
 DEMO_MODE=1 tether check --diff bench/cases/001-drop-orders-discount-pct/diff.patch
 ```
 
-## Use it on your own repo
+**The full thing** (real DataHub, the repair loop, the write-backs):
 
-```yaml
-- uses: ./action
-  with:
-    datahub-gms-url: ${{ secrets.DATAHUB_GMS_URL }}
-    datahub-token: ${{ secrets.DATAHUB_TOKEN }}
+```bash
+bash scripts/quickstart.sh          # datahub quickstart + seed the ML layer, ~6 min
+tether bench                        # cold -> repair -> warm, regenerates the report
 ```
 
-Mark `tether` as a required status check and the merge button greys out.
+Windows: `powershell -File scripts/quickstart.ps1`.
 
-## The ML layer
+## Deploy it on your own repo
 
-`showcase-ecommerce` ships no ML entities, which is why the Production ML Agents track is
-hard to enter at all. `seed/emit_ml_layer.py` emits the missing layer from a declarative
-`seed/entities.yaml`: feature tables, features, model groups, models, deployments, owners,
-and both dataset-level and column-level lineage edges.
+```yaml
+# .github/workflows/tether.yml
+on: { pull_request: { paths: ["**/*.sql"] } }
+jobs:
+  tether:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: rushibhosalepro/tether@v1
+        with:
+          datahub-gms-url: ${{ secrets.DATAHUB_GMS_URL }}
+          datahub-token:   ${{ secrets.DATAHUB_TOKEN }}
+```
 
-It is written to stand on its own as a datapack, not just as fixture data for this project.
+Mark `tether` a required status check and the merge button greys out on a block. The only real
+requirement is a DataHub the runner can reach (DataHub Cloud, a self-hosted runner on your
+network, or a tunnel). No DataHub reachable from CI? Leave `datahub-gms-url` empty and it runs
+in `DEMO_MODE` off recorded fixtures.
+
+## Why this needs DataHub specifically
+
+The blast radius of a dropped column is `column → feature → model → deployment`, and that path
+lives in **one graph only in DataHub**. No dbt manifest, no schema file, no other catalog knows
+that models exist, let alone which feature feeds which one. Replace DataHub and the product
+stops existing.
+
+It is also why the repair matters: DataHub's own impact analysis can only traverse the
+dependencies someone already wrote down. Tether writes the missing ones back, so the graph is
+strictly richer after it runs, which is the challenge text verbatim: *"writes results back so
+the next person or agent inherits the knowledge."*
 
 ## Layout
 
 | Path | What is in it |
 |---|---|
-| `src/tether/diff/` | unified diff → `ColumnChange[]`, dbt and DDL |
-| `src/tether/graph/` | URN resolution, forward lineage walk into the ML layer |
+| `src/tether/diff/` | unified diff → `ColumnChange[]` |
+| `src/tether/graph/` | dataset resolution, the relationships-API lineage walk |
 | `src/tether/verdict/` | the deterministic classifier, the rules, the LLM fence |
-| `src/tether/writeback/` | incident, institutional memory, GitHub check |
-| `src/tether/arms/` | the two benchmark arms |
-| `seed/` | the ML layer, offerable upstream as a datapack |
-| `bench/` | replay cases, both arms, published misses |
+| `src/tether/repair/` | diagnose a gap, infer the edge from SQL, refuse the unprovable |
+| `src/tether/writeback/` | incident, institutional memory, inferred edge, PR status |
+| `seed/` | the ML layer + `--partial` mode + ground truth |
+| `bench/` | the cold→repair→warm benchmark |
 | `examples/` | real output, readable without running anything |
 
 ## "DataHub already has impact analysis"
 
-It does, and it is good. It is also a UI you open after you already suspect something, it
-terminates at the dashboard layer, and it cannot read a diff that has not been merged yet.
-Tether runs on the change before it exists and ends at a merge decision. Different direction
-of travel, different terminus.
+It does, and it is good. It is also a UI you open *after* you suspect something, it stops at
+dashboards, it cannot read a diff that has not been merged, and **it can only traverse the
+dependencies someone already wrote down.** Tether runs on the change before it exists, ends at
+a merge decision, and writes back the dependencies it needed to make that decision.
 
 ## License
 
