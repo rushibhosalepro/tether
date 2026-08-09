@@ -58,21 +58,25 @@ feature's SQL reads it. The walk is not just "any column in a consumed table".
 
 ---
 
-## An actual GitHub PR, blocked for real
+## Real PRs on a separate public repo
 
-PR: https://github.com/rushibhosalepro/tether/pull/1 (drops `orders.discount_pct`)
+Tether runs against a separate, public "data team" repo so the checks are on someone else's
+PRs, not our own: **https://github.com/rushibhosalepro/tether-demo-warehouse/pulls**
 
-Tether ran against the PR diff and the live DataHub, and on the PR itself:
+Four real PRs, each dropping one column, each judged against the live DataHub graph:
 
-- Set a red commit status **`tether` = failure**: "1 production model still read a column this
-  PR changes" (a required status greys out the merge button)
-- Posted a PR comment naming `churn_propensity_v4`, owner @aman, last trained 2026-03-14, and
-  linking the DataHub incident
-- Raised a real incident on the model in DataHub (priority CRITICAL)
-- Re-running updates the same comment and reuses the same incident (no spam)
+| PR | Change | Tether status | Right? |
+|---|---|---|---|
+| #1 | drop `orders.discount_pct` | 🔴 failure, blocks `churn_propensity_v4` (@aman) | ✅ |
+| #2 | drop `orders.quantity` | 🔴 failure, blocks `dynamic_pricing_v2` (@wenjia) | ✅ |
+| #3 | drop `products.unit_cost` | 🔴 failure, blocks `dynamic_pricing_v2` | ✅ |
+| #4 | drop `orders.status` | 🟢 success, no ML impact | ✅ |
+
+Each blocked PR carries a red `tether` commit status (greys out merge), a comment naming the
+model and owner, and a real incident filed on the model in DataHub. Verified on GitHub 2026-08-09.
 
 Note: check runs need a GitHub App, so the last-mile verb is a commit status, which works with
-a normal token and gates merge the same way. Verified 2026-08-09.
+a normal token and gates merge the same way.
 
 ## A real change, run end-to-end with write-backs (live DataHub)
 
@@ -95,6 +99,7 @@ The behaviours every case depends on, each run for real:
 
 ---
 
-<sub>Logic checks (not the headline): 22 unit tests pass covering the classifier rules, the
-LLM-can-never-block boundary, the diff parser, and the repair-never-guesses boundary. They
-prove the code is correct; the cases above prove the system is right.</sub>
+<sub>Logic checks (not the headline): 34 unit tests pass covering the classifier rules, the
+LLM-can-never-block boundary, the repair-never-guesses boundary, the diff parser (multi-column,
+adds, retypes), report roll-up, and SQL inference across every feature. They prove the code is
+correct; the PRs above prove the system is right.</sub>
