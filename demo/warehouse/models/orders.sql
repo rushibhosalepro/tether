@@ -8,7 +8,6 @@ select
     created_at,
     quantity,
     unit_price,
-    discount_pct,
     total_amount,
     status
 from {{ source('raw', 'orders') }}
