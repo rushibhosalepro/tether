@@ -65,20 +65,24 @@ in Python, no SQL to cite). Delete the repair step and the warm run equals the c
 write-back is load-bearing, not decoration. Regenerate this yourself with `tether bench`; the
 report renders to [`examples/report.html`](examples/report.html).
 
-## Three trust boundaries, all tested
+## Three trust boundaries, each enforced by a test
 
-Tether makes consequential decisions, and none is left to chance or an LLM:
+Tether makes three decisions it must never get wrong. None is a promise in this README, each is
+a test that fails the build if the guarantee ever breaks:
 
 1. **The LLM never decides to block.** The classifier ([`verdict/classifier.py`](src/tether/verdict/classifier.py))
    is the only thing that can emit `BLOCK`. The model is called in exactly one place, after a
-   block, and can only ever *downgrade* it to a warning. `tests/test_llm_cannot_block.py`.
+   block, and can only ever *downgrade* it to a warning. Enforced by
+   [`tests/test_llm_cannot_block.py`](tests/test_llm_cannot_block.py).
 2. **Tether never writes an edge it cannot prove.** The repair infers edges from SQL only
    ([`repair/infer.py`](src/tether/repair/infer.py)); a feature with no SQL is refused and the
-   refusal is published. `tests/test_repair_refuses.py`.
+   refusal is published. Enforced by [`tests/test_repair_refuses.py`](tests/test_repair_refuses.py).
 3. **The gate fails closed.** If Tether cannot verify a change, unreachable DataHub, a walk that
    throws, a parse failure, it returns `ERROR`, not PASS: a red status and a non-zero exit that
    blocks merge. A green check on a PR it never actually checked is the one thing a gate must
-   never do. `tests/test_fail_closed.py`.
+   never do. Enforced by [`tests/test_fail_closed.py`](tests/test_fail_closed.py).
+
+The whole suite runs in under a second:
 
 ```bash
 python -m pytest -q      # 40 tests
