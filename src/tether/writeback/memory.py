@@ -22,11 +22,18 @@ mutation addLink($input: AddLinkInput!) {
 def label_for(verdict: Verdict, impacts: list[Impact]) -> str:
     names = ", ".join(sorted({i.model_name for i in impacts})[:3])
     more = "" if len(impacts) <= 3 else f" +{len(impacts) - 3} more"
-    return f"Tether: consumed by {names}{more}"
+    return f"Tether: {verdict.change.label()} consumed by {names}{more}"
+
+
+def _dataset_of(schema_field_urn: str) -> str:
+    """schemaField urn embeds its dataset: urn:li:schemaField:(<dataset_urn>,<col>)."""
+    inner = schema_field_urn[len("urn:li:schemaField:("):]
+    return inner[: inner.rfind(",")]
 
 
 def record(verdict: Verdict, column_urn: str, pr_url: str) -> bool:
-    """Attach the PR to the column so the dependency outlives the incident."""
+    """Attach the PR to the dataset (OSS institutionalMemory does not accept a schemaField
+    URN), naming the column in the label, so the dependency outlives the incident."""
     if not verdict.impacts:
         return False
     client().graphql(
@@ -35,7 +42,7 @@ def record(verdict: Verdict, column_urn: str, pr_url: str) -> bool:
             "input": {
                 "linkUrl": pr_url,
                 "label": label_for(verdict, verdict.impacts),
-                "resourceUrn": column_urn,
+                "resourceUrn": _dataset_of(column_urn),
             }
         },
     )

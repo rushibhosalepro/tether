@@ -20,18 +20,6 @@ mutation raise($input: RaiseIncidentInput!) {
 }
 """
 
-EXISTING = """
-query openIncidents($urn: String!) {
-  entity(urn: $urn) {
-    ... on MLModel {
-      incidents(start: 0, count: 50) {
-        incidents { urn title status { state } }
-      }
-    }
-  }
-}
-"""
-
 
 def title_for(verdict: Verdict, impact: Impact) -> str:
     return f"Schema change blocks {impact.model_name}: {verdict.change.label()}"
@@ -58,16 +46,33 @@ def description_for(verdict: Verdict, impact: Impact, pr_url: str) -> str:
     )
 
 
+def _cache_path():
+    from ..config import settings
+
+    return settings.ledger_path.with_name(".incidents_raised.json")
+
+
 def already_open(model_urn: str, title: str) -> str | None:
-    try:
-        data = client().graphql(EXISTING, {"urn": model_urn})
-    except Exception:
+    """OSS GraphQL does not expose an entity's incidents, so idempotency is tracked locally.
+
+    Keyed on model + title, so re-running Tether on the same PR does not spam the model page.
+    """
+    import json
+
+    path = _cache_path()
+    if not path.exists():
         return None
-    entity = data.get("entity") or {}
-    for inc in ((entity.get("incidents") or {}).get("incidents") or []):
-        if inc.get("title") == title and (inc.get("status") or {}).get("state") == "ACTIVE":
-            return inc["urn"]
-    return None
+    cache = json.loads(path.read_text(encoding="utf-8"))
+    return cache.get(f"{model_urn}|{title}")
+
+
+def _remember(model_urn: str, title: str, incident_urn: str) -> None:
+    import json
+
+    path = _cache_path()
+    cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    cache[f"{model_urn}|{title}"] = incident_urn
+    path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
 
 
 def raise_for(verdict: Verdict, impact: Impact, pr_url: str) -> str:
@@ -85,12 +90,13 @@ def raise_for(verdict: Verdict, impact: Impact, pr_url: str) -> str:
                 "title": title,
                 "description": description_for(verdict, impact, pr_url),
                 "resourceUrns": [impact.model_urn],
-                "priority": 0 if impact.is_live else 2,
-                "source": {"type": "MANUAL"},
+                "priority": "CRITICAL" if impact.is_live else "MEDIUM",
             }
         },
     )
-    return data["raiseIncident"]
+    incident_urn = data["raiseIncident"]
+    _remember(impact.model_urn, title, incident_urn)
+    return incident_urn
 
 
 def raise_all(verdicts: list[Verdict], pr_url: str) -> list[str]:

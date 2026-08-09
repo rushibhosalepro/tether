@@ -18,6 +18,8 @@ venv/
 # local run output
 # note: bench/results/ is deliberately NOT ignored. the numbers are the submission.
 predictions.jsonl
+.incidents_raised.json
+src/tether/repair/refusals.jsonl
 .tether_cache/
 
 # os / editor

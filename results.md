@@ -58,13 +58,23 @@ feature's SQL reads it. The walk is not just "any column in a consumed table".
 
 ---
 
+## A real change, run end-to-end with write-backs (live DataHub)
+
+`tether check` on the `drop orders.discount_pct` diff (warm graph), write-backs ON:
+
+- Verdict: **BLOCK**, rule R1, `churn_propensity_v4` (live), owner @aman
+- Raised a real incident on the model: `urn:li:incident:...` (priority CRITICAL)
+- Wrote an institutional-memory link recording the dependency and the PR
+- Re-running reuses the same incident (idempotent), it does not spam the model page
+
 ## Proven against live DataHub (2026-08-09)
 
-The behaviours every case depends on, each run for real once:
+The behaviours every case depends on, each run for real:
 
 - Walk from a dataset to the models that consume it → works
 - Raise an incident on a model → works (returns an incident URN)
 - Write an inferred lineage edge back → works
+- Write an institutional-memory link → works (on the dataset; OSS rejects a column URN)
 - Cold walk misses a model with no declared edge; after writing the edge, the walk catches it → **the loop works**
 
 ---
