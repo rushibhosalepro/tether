@@ -141,6 +141,21 @@ commit in the history:
   model it endangers in the title and body, where the next engineer to touch that table sees it.
   The model's own before/after is visible on its Lineage tab.
 
+## Results
+
+Screenshots from a live run (more in [`examples/screens/`](https://github.com/rushibhosalepro/tether/tree/main/examples/screens)):
+
+- **The blocked PR** — Tether's BLOCK comment (model, owner, incident link) and the failed
+  `tether` check gating the merge button:
+  [01-pr1-blocked-full.jpeg](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/01-pr1-blocked-full.jpeg)
+- **The write-back in DataHub** — the `orders` table's Incidents tab with two **Critical**
+  incidents naming `churn_propensity_v4` and `dynamic_pricing_v2`:
+  [03-orders-incidents-critical.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/03-orders-incidents-critical.png)
+- **The repaired edge** — `discount_sensitivity` carrying the `tether:inferred` tag on the model:
+  [07-model-features-inferred-tag.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/07-model-features-inferred-tag.png)
+- **Four PRs at a glance** — three blocked, one passed:
+  [02-prs-list-3red-1green.png](https://github.com/rushibhosalepro/tether/blob/main/examples/screens/02-prs-list-3red-1green.png)
+
 ## Accomplishments I'm proud of
 
 - A real loop with a real before/after number (3/6 → 5/6), reproducible in one command.
