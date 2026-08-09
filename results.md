@@ -8,14 +8,18 @@ a real diff run against a live DataHub. Misses stay in.
 
 ## The headline: detection before vs after the repair loop
 
-Same 8 cases, same code. The only difference is whether Tether repaired the lineage edges it
-found missing. (benchmark pending, target shape below)
+Same cases, same code, run against the live graph. The only difference is whether Tether
+repaired the lineage edges it found missing. Verified 2026-08-09.
 
-| | Caught | Missed | Notes |
+| | Breakages caught | Missed | Notes |
 |---|---|---|---|
-| Cold graph (edges undeclared) | _/8 | _/8 | misses where no one declared the edge |
-| After repair | _/8 | _/8 | Tether inferred the edge from SQL and wrote it back |
-| Refused to guess | | | feature with no SQL to point at, refused both times |
+| Cold graph (edges undeclared) | 3 / 6 | 3 | misses where no one declared the edge |
+| After repair | **5 / 6** | 1 | Tether inferred 2 edges from SQL and wrote them back |
+| Refused to guess | | 1 | `support_sentiment` is computed in Python; no SQL to point at, refused |
+
+The repair is real: delete it and the warm run equals the cold run. The 2 edges Tether wrote
+back (`discount_sensitivity`, `demand_index_7d`) each carry the SQL `file:line` as evidence
+and a `tether:inferred` tag, so nobody mistakes them for declared truth.
 
 ---
 
@@ -35,11 +39,22 @@ lands. Ground truth is in `seed/ground_truth.yaml`.
 | drop `orders.status` | (nothing) | none | **PASS** ✅ | PASS |
 | drop `customers.support_tickets` | support_sentiment (Python) | churn_propensity_v4 | **MISS** | BLOCK, but unprovable |
 
-Cold catches 3 of 6 real breakages, correctly passes the true-negative, and misses 3. Two of
-those misses are repairable from SQL; one (the Python feature) Tether must refuse to guess.
+Cold catches 3 of 6 real breakages, correctly passes the true-negative, and misses 3. After
+repair, `discount_pct` and `quantity` flip to CATCH; `support_tickets` stays a miss because
+Tether refuses to infer the Python feature's edge.
 
 Column precision is real: dropping `orders.status` correctly touches nothing, because no
 feature's SQL reads it. The walk is not just "any column in a consumed table".
+
+## The repair loop, proven end-to-end (live DataHub)
+
+- COLD: `discount_pct` MISS, `quantity` MISS, `support_tickets` MISS
+- DIAGNOSE: found the feature whose SQL reads each column but whose edge was undeclared
+- REPAIR: wrote `discount_sensitivity <- orders` (evidence `discount_sensitivity.sql:5`) and
+  `demand_index_7d <- orders` (evidence `demand_index_7d.sql:5`); **refused** `support_sentiment`
+  (Python, no SQL)
+- WARM: `discount_pct` -> churn_propensity_v4, `quantity` -> dynamic_pricing_v2,
+  `support_tickets` -> still MISS
 
 ---
 
@@ -54,6 +69,6 @@ The behaviours every case depends on, each run for real once:
 
 ---
 
-<sub>Logic checks (not the headline): 18 unit tests pass covering the classifier rules, the
-LLM-can-never-block boundary, and the diff parser. They prove the code is correct; the cases
-above prove the system is right.</sub>
+<sub>Logic checks (not the headline): 22 unit tests pass covering the classifier rules, the
+LLM-can-never-block boundary, the diff parser, and the repair-never-guesses boundary. They
+prove the code is correct; the cases above prove the system is right.</sub>
