@@ -22,7 +22,7 @@ def cmd_check(args) -> int:
         diff_text, args.pr_url, arm=args.arm, use_llm=not args.no_llm, repair=not args.dry_run
     )
 
-    result = {"incidents": [], "check_url": None}
+    result = {"incidents": [], "incident_links": [], "check_url": None}
     if not args.dry_run:
         result = write_back(report, column_urns, args.pr_url)
         store.append(report, case_id=args.case_id, arm=args.arm)
@@ -31,7 +31,7 @@ def cmd_check(args) -> int:
         print(json.dumps({**report.to_dict(), **result}, indent=2))
     else:
         print(f"tether: {report.level.value}")
-        print(summary_markdown(report, result.get("incidents") or []))
+        print(summary_markdown(report, result.get("incident_links") or []))
 
     # fail closed: red on a real block AND when Tether could not verify
     return EXIT_BLOCK if report.fails_check else 0

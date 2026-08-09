@@ -110,9 +110,10 @@ def write_back(report: Report, column_urns: dict[str, str], pr_url: str) -> dict
     write-back, the inferred lineage edge, is written earlier during repair (see run(repair=))."""
     from .writeback import github_check, incident, memory
 
-    out: dict = {"incidents": [], "links": 0, "check_url": None, "errors": []}
+    out: dict = {"incidents": [], "incident_links": [], "links": 0, "check_url": None, "errors": []}
     try:
-        out["incidents"] = incident.raise_all(report.verdicts, pr_url)
+        out["incidents"] = incident.raise_all(report.verdicts, pr_url, column_urns)
+        out["incident_links"] = _incident_links(report, column_urns)
     except Exception as exc:
         out["errors"].append(f"incident: {exc}")
     try:
@@ -120,7 +121,19 @@ def write_back(report: Report, column_urns: dict[str, str], pr_url: str) -> dict
     except Exception as exc:
         out["errors"].append(f"memory: {exc}")
     try:
-        out["check_url"] = github_check.post_check(report, out["incidents"])
+        out["check_url"] = github_check.post_check(report, out["incident_links"])
     except Exception as exc:
         out["errors"].append(f"check: {exc}")
     return out
+
+
+def _incident_links(report: Report, column_urns: dict[str, str]) -> list[str]:
+    """Deduped links to the dataset Incidents tab for each blocked change (where OSS renders them)."""
+    from .writeback.incident import _dataset_of, incident_link_for_dataset
+
+    seen: dict[str, str] = {}
+    for v in report.verdicts:
+        if v.level is Level.BLOCK and v.change.label() in column_urns:
+            ds = _dataset_of(column_urns[v.change.label()])
+            seen[ds] = incident_link_for_dataset(ds)
+    return list(seen.values())

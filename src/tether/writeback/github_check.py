@@ -16,9 +16,7 @@ from ..verdict.models import Level, Report
 API = "https://api.github.com"
 
 
-def summary_markdown(report: Report, incident_urns: list[str]) -> str:
-    from .incident import incident_link
-
+def summary_markdown(report: Report, incident_links: list[str]) -> str:
     if report.level is Level.PASS:
         return "No production ML model consumes any column changed in this PR."
     if report.level is Level.ERROR:
@@ -43,9 +41,9 @@ def summary_markdown(report: Report, incident_urns: list[str]) -> str:
         elif v.level is Level.WARN and v.llm_note:
             body.append(f"- {v.change.label()} downgraded to WARN: {v.llm_note}")
 
-    if incident_urns:
-        body += ["", "Filed in DataHub:"]
-        body += [f"- {incident_link(u)}" for u in incident_urns]
+    if incident_links:
+        body += ["", "Filed as a DataHub incident on the affected table:"]
+        body += [f"- {u}" for u in incident_links]
 
     body += [
         "",
@@ -56,7 +54,7 @@ def summary_markdown(report: Report, incident_urns: list[str]) -> str:
     return "\n".join(body)
 
 
-def post_check(report: Report, incident_urns: list[str], sha: str | None = None) -> str | None:
+def post_check(report: Report, incident_links: list[str], sha: str | None = None) -> str | None:
     """Set a commit status on the PR head and post the detail as a PR comment.
 
     A commit status (not a check run) is used deliberately: the GitHub Checks API only accepts
@@ -95,18 +93,18 @@ def post_check(report: Report, incident_urns: list[str], sha: str | None = None)
     )
     resp.raise_for_status()
 
-    _upsert_comment(repo, report, incident_urns, headers)
+    _upsert_comment(repo, report, incident_links, headers)
     return resp.json().get("url")
 
 
-def _upsert_comment(repo: str, report: Report, incident_urns: list[str], headers: dict) -> None:
+def _upsert_comment(repo: str, report: Report, incident_links: list[str], headers: dict) -> None:
     """Post (or update) one Tether comment on the PR, so re-runs don't spam it."""
     pr_number = report.pr_url.rstrip("/").split("/")[-1]
     if not pr_number.isdigit():
         return
     marker = "<!-- tether -->"
     icon = {"BLOCK": "🔴", "ERROR": "🟠", "WARN": "🟡", "PASS": "🟢"}[report.level.value]
-    body = f"{marker}\n## {icon} Tether: {report.level.value}\n\n" + summary_markdown(report, incident_urns)
+    body = f"{marker}\n## {icon} Tether: {report.level.value}\n\n" + summary_markdown(report, incident_links)
 
     listing = requests.get(f"{API}/repos/{repo}/issues/{pr_number}/comments", headers=headers, timeout=30)
     existing = None
