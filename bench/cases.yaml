@@ -1,0 +1,50 @@
+# The benchmark: real schema changes replayed against the live graph.
+#
+# Each case drops one column. `expected` is ground truth: BLOCK if a column feeds a model that
+# is currently serving, PASS otherwise. `provable` says whether the missing edge (if any) can
+# be recovered from SQL; the one that cannot is the honest failure Tether refuses to guess at.
+#
+# Expected cold/warm outcomes are derived, not asserted, by run_bench against the live graph.
+
+cases:
+  - table: analytics.public.orders
+    column: discount_pct
+    expected: BLOCK          # -> discount_sensitivity -> churn_propensity_v4 (serving)
+    edge: undeclared
+    provable: true
+
+  - table: analytics.public.orders
+    column: quantity
+    expected: BLOCK          # -> demand_index_7d -> dynamic_pricing_v2 (serving)
+    edge: undeclared
+    provable: true
+
+  - table: analytics.public.orders
+    column: total_amount
+    expected: BLOCK          # -> avg_basket_value -> churn_propensity_v4 (serving)
+    edge: declared
+    provable: true
+
+  - table: analytics.public.orders
+    column: order_id
+    expected: BLOCK          # -> order_frequency_90d -> churn_propensity_v4 (serving)
+    edge: declared
+    provable: true
+
+  - table: analytics.public.products
+    column: unit_cost
+    expected: BLOCK          # -> margin_band -> dynamic_pricing_v2 (serving)
+    edge: declared
+    provable: true
+
+  - table: analytics.public.customers
+    column: support_tickets
+    expected: BLOCK          # -> support_sentiment (Python) -> churn_propensity_v4 (serving)
+    edge: undeclared
+    provable: false          # no SQL to prove it. Tether must refuse, stays a miss.
+
+  - table: analytics.public.orders
+    column: status
+    expected: PASS           # nothing reads it. The true negative that keeps Tether honest.
+    edge: none
+    provable: true

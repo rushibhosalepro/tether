@@ -1,14 +1,6 @@
-"""Self-contained static HTML for the benchmark. No framework, no server, no CDN.
-
-The entire "frontend". One reader: a judge who will not start Docker and wants the number in
-ten seconds. Everything Tether actually produces lives in DataHub and on the PR.
-"""
-
-from __future__ import annotations
-
-from pathlib import Path
-
-CSS = """
+<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tether benchmark</title><style>
 :root { color-scheme: light dark; --fg:#111; --bg:#fff; --mut:#666; --line:#e3e3e3;
         --block:#c0392b; --ok:#1e8449; }
 @media (prefers-color-scheme: dark) {
@@ -35,28 +27,7 @@ code { font:.85em ui-monospace,Menlo,monospace; background:color-mix(in srgb,var
 .miss { color:var(--block); font-weight:600 } .catch { color:var(--ok); font-weight:600 }
 .note { color:var(--mut); font-size:.9rem; border-left:2px solid var(--line); padding-left:1rem; margin:2rem 0 }
 .wrap { overflow-x:auto }
-"""
-
-
-def _cell(level: str, expected: str) -> str:
-    ok = level == expected
-    cls = "catch" if ok else "miss"
-    return f'<span class="{cls}">{level}</span>'
-
-
-def render(cold, warm, out_dir: Path) -> Path:
-    nb = len(warm.breakages)
-    rows = []
-    for c, w in zip(cold.results, warm.results):
-        note = "" if w.provable else ' <span class="note">Python, refused</span>'
-        rows.append(
-            f"<tr><td><code>{w.label}</code>{note}</td><td>{w.expected}</td>"
-            f"<td>{_cell(c.cold, c.expected)}</td><td>{_cell(w.warm, w.expected)}</td></tr>"
-        )
-
-    html = f"""<!doctype html><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tether benchmark</title><style>{CSS}</style>
+</style>
 <main>
 <h1>Same PRs, same code. One difference: did Tether repair the graph first.</h1>
 <p class="sub">Every model Tether missed was a lineage edge nobody wrote down. It finds them,
@@ -64,24 +35,18 @@ proves them against the SQL, writes them back, and stops missing them.</p>
 
 <div class="arms">
   <div class="arm"><h2>Cold graph</h2>
-    <div class="big cold">{cold.caught}/{nb}</div>
+    <div class="big cold">3/6</div>
     <div class="cap">breakages caught, before repair</div></div>
   <div class="arm"><h2>After repair</h2>
-    <div class="big warm">{warm.caught}/{nb}</div>
+    <div class="big warm">5/6</div>
     <div class="cap">after Tether wrote back the edges it could prove</div></div>
 </div>
 
 <div class="wrap"><table>
 <thead><tr><th>Column dropped</th><th>Should be</th><th>Cold</th><th>After repair</th></tr></thead>
-<tbody>{''.join(rows)}</tbody></table></div>
+<tbody><tr><td><code>orders.discount_pct</code></td><td>BLOCK</td><td><span class="miss">PASS</span></td><td><span class="catch">BLOCK</span></td></tr><tr><td><code>orders.quantity</code></td><td>BLOCK</td><td><span class="miss">PASS</span></td><td><span class="catch">BLOCK</span></td></tr><tr><td><code>orders.total_amount</code></td><td>BLOCK</td><td><span class="catch">BLOCK</span></td><td><span class="catch">BLOCK</span></td></tr><tr><td><code>orders.order_id</code></td><td>BLOCK</td><td><span class="catch">BLOCK</span></td><td><span class="catch">BLOCK</span></td></tr><tr><td><code>products.unit_cost</code></td><td>BLOCK</td><td><span class="catch">BLOCK</span></td><td><span class="catch">BLOCK</span></td></tr><tr><td><code>customers.support_tickets</code> <span class="note">Python, refused</span></td><td>BLOCK</td><td><span class="miss">PASS</span></td><td><span class="miss">PASS</span></td></tr><tr><td><code>orders.status</code></td><td>PASS</td><td><span class="catch">PASS</span></td><td><span class="catch">PASS</span></td></tr></tbody></table></div>
 
 <p class="note">The one still missed is a feature computed in Python, with no SQL for Tether to
 point at. It refuses to guess the edge rather than write one it cannot prove. That refusal is
 the honest failure, not a bug.</p>
-</main>"""
-
-    path = out_dir.parents[1] / "examples" / "report.html"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(html, encoding="utf-8")
-    print(f"wrote {path}")
-    return path
+</main>

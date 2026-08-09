@@ -42,7 +42,7 @@ def cmd_seed(args) -> int:
 def cmd_bench(args) -> int:
     from bench.run_bench import main as bench  # noqa: PLC0415
 
-    return bench(arms=args.arms.split(","), cases_dir=Path(args.cases))
+    return bench()
 
 
 def cmd_doctor(args) -> int:
@@ -74,9 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_seed)
 
-    b = sub.add_parser("bench", help="run the replay benchmark, both arms")
-    b.add_argument("--arms", default="datahub,dbt-only")
-    b.add_argument("--cases", default="bench/cases")
+    b = sub.add_parser("bench", help="run the cold->repair->warm benchmark")
     b.set_defaults(func=cmd_bench)
 
     d = sub.add_parser("doctor", help="check the local setup")
