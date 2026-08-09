@@ -37,7 +37,7 @@ parse the diff into column-level changes (drop / rename / retype)
               └─ deterministic classifier decides BLOCK / WARN / PASS
                   ├─ fail the `tether` commit status (greys out merge)
                   ├─ comment on the PR with the model, its owner, and the incident link
-                  └─ raise a DATA_SCHEMA incident on the model in DataHub
+                  └─ raise a DATA_SCHEMA incident on the affected table, naming the model
 ```
 
 And when the walk misses, because the dataset→feature edge was never declared, Tether repairs

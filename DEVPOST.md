@@ -47,7 +47,7 @@ Tether runs on every pull request that touches a `.sql` file.
 4. A deterministic classifier decides BLOCK, WARN, or PASS.
 5. If a serving model still reads the column, it **fails the PR's `tether` status** (greying out
    the merge button), comments naming the model and its owner, and **files a `DATA_SCHEMA`
-   incident on the model in DataHub**.
+   incident on the affected table, naming the model, in DataHub**.
 
 So the dependency that used to live in one senior engineer's head is now a check on the PR and a
 first-class incident the next person inherits.
@@ -84,7 +84,7 @@ first. The write-back isn't a receipt; it's the thing that makes the next run be
 |---|---|
 | Uses DataHub's end-to-end ML lineage | walks `dataset → mlFeature → mlModel → deployment` over the relationships API |
 | Catches silent problems before they cost money | blocks the PR before a serving model loses an input |
-| Writes results back so the next person inherits them | files an incident on the model, writes lineage edges + institutional memory |
+| Writes results back so the next person inherits them | files an incident on the affected table naming the model, writes the lineage edge + institutional memory |
 | Goes beyond reading metadata | the inferred lineage edge makes the graph strictly richer after it runs |
 
 ## How I built it
@@ -136,6 +136,10 @@ commit in the history:
   says so in the reason, rather than silently letting the change through.
 - It protects tables DataHub knows about. A change to a table that isn't cataloged is reported
   as un-assessable, not waved through.
+- OSS DataHub renders incidents on tables, not on ML models (an `incidents` field exists on
+  `Dataset` but not `MLModel`). So Tether files the incident on the affected table and names the
+  model it endangers in the title and body, where the next engineer to touch that table sees it.
+  The model's own before/after is visible on its Lineage tab.
 
 ## Accomplishments I'm proud of
 

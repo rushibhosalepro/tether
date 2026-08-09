@@ -73,7 +73,7 @@ Four real PRs, each dropping one column, each judged against the live DataHub gr
 | #4 | drop `orders.status` | 🟢 success, no ML impact | ✅ |
 
 Each blocked PR carries a red `tether` commit status (greys out merge), a comment naming the
-model and owner, and a real incident filed on the model in DataHub. Verified on GitHub 2026-08-09.
+model and owner, and a real incident filed on the affected table (naming the model). Verified on GitHub 2026-08-09.
 
 Note: check runs need a GitHub App, so the last-mile verb is a commit status, which works with
 a normal token and gates merge the same way.
@@ -83,18 +83,18 @@ a normal token and gates merge the same way.
 `tether check` on the `drop orders.discount_pct` diff (warm graph), write-backs ON:
 
 - Verdict: **BLOCK**, rule R1, `churn_propensity_v4` (live), owner @aman
-- Raised a real incident on the model: `urn:li:incident:...` (priority CRITICAL)
+- Raised a real incident on the `orders` table, titled "Schema change blocks churn_propensity_v4" (priority CRITICAL), visible on the table's Incidents tab
 - Wrote an institutional-memory link recording the dependency and the PR
-- Re-running reuses the same incident (idempotent), it does not spam the model page
+- Re-running reuses the same incident (idempotent), it does not spam the table page
 
 ## Proven against live DataHub (2026-08-09)
 
 The behaviours every case depends on, each run for real:
 
 - Walk from a dataset to the models that consume it → works
-- Raise an incident on a model → works (returns an incident URN)
+- Raise an incident on the affected table → works, renders on the table's Incidents tab (Critical)
 - Write an inferred lineage edge back → works
-- Write an institutional-memory link → works (on the dataset; OSS rejects a column URN)
+- Write institutional-memory links on the table → works (OSS rejects a schemaField URN)
 - Cold walk misses a model with no declared edge; after writing the edge, the walk catches it → **the loop works**
 
 ## Fails closed, and the loop runs in the product (not just the bench)
