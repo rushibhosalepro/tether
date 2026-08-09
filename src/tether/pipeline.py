@@ -10,7 +10,7 @@ from typing import Callable
 
 from .arms import datahub_arm, dbt_manifest_arm
 from .diff.parser import parse_diff
-from .graph.resolve import resolve_column
+from .graph.resolve import resolve_dataset, schema_field_urn
 from .verdict import llm_assist
 from .verdict.classifier import assert_deterministic, classify
 from .verdict.models import Impact, Level, Report
@@ -34,14 +34,13 @@ def run(
     column_urns: dict[str, str] = {}
 
     for change in changes:
-        column_urn = None
         impacts: list[Impact] = []
         try:
-            column_urn = resolve_column(change.table, change.column)
-            if column_urn:
-                column_urns[change.label()] = column_urn
-                impacts = impacts_for(column_urn)
-        except Exception as exc:  # unresolvable column is a finding, not a crash
+            dataset_urn = resolve_dataset(change.table)
+            if dataset_urn:
+                column_urns[change.label()] = schema_field_urn(dataset_urn, change.column)
+                impacts = impacts_for(dataset_urn, change.column)
+        except Exception as exc:  # unresolvable table is a finding, not a crash
             verdict = classify(change, [])
             verdict.reason = f"Could not resolve {change.label()} in DataHub: {exc}"
             verdict.rule_id = "R-unresolved"

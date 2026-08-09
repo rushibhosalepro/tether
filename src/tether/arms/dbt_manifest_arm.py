@@ -49,6 +49,6 @@ def downstream_nodes(table: str, manifest_path: str) -> list[str]:
     return sorted(seen)
 
 
-def ml_impacts(column_urn: str, manifest_path: str = "demo/warehouse/target/manifest.json") -> list[Impact]:
+def ml_impacts(dataset_urn: str, column: str | None = None, **_: object) -> list[Impact]:
     """Always empty. dbt's graph contains no mlFeature, mlModel or mlModelDeployment."""
     return []

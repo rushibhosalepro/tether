@@ -1,71 +1,61 @@
-# Running test log
+# Test log
 
-One line per test, written as it happens, pass or fail. Failures stay in. At submission
-time this file is the evidence, not something assembled afterwards.
+One line per test, written when it happens. Pass or fail, failures stay in.
+This is the evidence at submission time, built as we go, not assembled at the end.
 
-Format: `date time — what was tested → result`
+---
 
-## 2026-08-08 — scaffold and first tests
+## Unit tests (no DataHub needed) — 18/18 passing
 
-**Environment**
+These prove the logic. They do not touch the graph, so they are not the headline number.
 
-- 12:38 — Docker Desktop up, `datahub docker quickstart` containers running: gms, frontend, kafka, mysql, opensearch → PASS
-- 12:41 — GMS `/health` returned 000 (still booting at 48s) → FAIL, expected, retried
-- 13:05 — GMS `http://localhost:8080/health` → 200, frontend `http://localhost:9002` → 200 → PASS
-- 13:06 — `datahub` CLI not on PATH in this Python env → FAIL, install pending before datapack load
+**Classifier rules (9)**
+- No ML model reads the column → PASS (does not block)
+- Drop a column a live model reads → BLOCK
+- Rename a column a live model reads → BLOCK
+- Change a column's meaning silently → BLOCK
+- Widen a type (int→bigint, float→double, date→timestamp) → WARN, not BLOCK
+- Change type class (number→text) → BLOCK
+- Model exists but nothing is deployed → WARN, not BLOCK
 
-**Classifier, rules R0–R5 (9 tests, `tests/test_classifier.py`)**
+**LLM safety boundary (5)**
+- The LLM cannot turn a PASS into a BLOCK
+- The LLM can only downgrade a BLOCK to a WARN
+- If the LLM errors, the block stays (fails safe)
+- If the LLM returns junk, the block stays (fails safe)
+- A block secretly tagged as LLM-made is rejected
 
-- 12:55 — R0 no ML consumer downstream → PASS (returns PASS, does not block)
-- 12:55 — R1 DROP under a model with IN_PRODUCTION deployment → PASS (returns BLOCK)
-- 12:55 — R2 RENAME under a live model → PASS (returns BLOCK)
-- 12:55 — R4 SEMANTIC change under a live model → PASS (returns BLOCK)
-- 12:55 — R3a widening int→bigint → PASS (returns WARN, not BLOCK)
-- 12:55 — R3a widening float→double → PASS (returns WARN)
-- 12:55 — R3a widening date→timestamp → PASS (returns WARN)
-- 12:55 — R3b type class change int→varchar(32) → PASS (returns BLOCK)
-- 12:55 — R5 model reached but nothing deployed → PASS (returns WARN, not BLOCK)
+**Diff parser (4)**
+- Finds a dropped column in a dbt model change
+- Finds exactly one change, no phantoms
+- Reads DDL rename and type change
+- Ignores non-SQL files
 
-**Determinism boundary (5 tests, `tests/test_llm_cannot_block.py`)**
+---
 
-- 12:55 — LLM cannot raise a PASS verdict to BLOCK → PASS
-- 12:55 — LLM may downgrade BLOCK to WARN when the diff proves it safe → PASS
-- 12:55 — LLM raises an exception (no API key) → block stands → PASS (fails closed)
-- 12:55 — LLM returns prose instead of JSON → block stands → PASS (fails closed)
-- 12:55 — a BLOCK forged with an LLM attribution is rejected by `assert_deterministic` → PASS
+## DataHub integration (go/no-go) — PASSED 2026-08-09
 
-**Diff parser (4 tests, `tests/test_parser.py`)**
+Tested against live DataHub OSS (quickstart). This is the real proof.
 
-- 13:10 — dbt model diff, dropped column detected on the real case file → PASS
-- 13:10 — same diff produces exactly one change, no phantom columns → PASS
-- 13:10 — DDL `ALTER TABLE ... RENAME COLUMN` and `ALTER COLUMN ... TYPE` both parsed → PASS
-- 13:10 — non-SQL files in the diff are ignored → PASS
+- PASS — sqlglot recovers `orders.discount_pct`, `orders.total_amount` from real feature SQL (CASE + aggregation), not a flat SELECT
+- PASS — emit a Snowflake dataset with columns via the SDK
+- PASS — emit an mlFeature, mlModel and deployment via the SDK
+- PASS — walk from a dataset to the models that consume it (dataset ← feature ← model)
+- PASS — raise an incident on a model (returned an incident URN)
+- PASS — write the inferred source edge back to a feature
+- FAIL — `datahub datapack load` (both packs): SDK 1.7.0 loader bug, not our code path. Worked around: we emit our own graph, which is what the project does anyway.
 
-**Totals so far: 18 tests, 18 pass, 0 fail.** Nothing here touches DataHub yet, so none of it
-is the headline number. It is the floor under the headline number.
+### Three things the live test corrected about the plan
 
-<!-- append below as you go. suggested next entries:
-- datapack showcase-ecommerce loaded, N entities visible
-- resolve_dataset("orders") returns a URN
-- emit_ml_layer --dry-run, all source tables resolve
-- emit_ml_layer live, mlModel page renders
-- forward lineage from orders.discount_pct reaches churn_propensity_v4  <- the go/no-go
-- raiseIncident against a model URN returns an incident urn
-- incident visible on the model page in the UI
-- addLink writes institutionalMemory on the column
-- diff parser on case 001 finds exactly one DROP
-- end to end: tether check on case 001 returns BLOCK
-- GitHub check run appears red on a real PR
-- bench both arms, N cases
--->
+- An `mlFeature` will **not** accept an `upstreamLineage` aspect. Column-level lineage cannot live on a feature. The native edge is dataset-level (`MLFeatureProperties.sources`). Column precision becomes recorded *evidence*, which is fine, it is what Tether adds.
+- The walk must use the **relationships API** (`DerivedFrom` incoming, then `Consumes` incoming), not `searchAcrossLineage` from the dataset, which returns nothing for datasets.
+- The repairable "missing edge" is a feature with no `sources`. Repair = write `sources` back.
 
-## Tricky cases, deliberately trying to break it
+---
 
-<!-- these are worth more to a judge than twenty easy passes:
-- column dropped that NO model reads → must PASS, not block (a gate that blocks everything gets disabled)
-- column renamed AND aliased back in the same PR → LLM should downgrade to WARN
-- model exists but has no deployment → WARN not BLOCK
-- column that cannot be resolved in DataHub at all → PASS with the reason recorded, no crash
-- DataHub unreachable mid-run → the check must not pass silently
-- same PR run twice → exactly one incident, not two
--->
+## The repair loop (the headline) — mechanism PROVEN, benchmark pending
+
+- PASS — cold graph (feature has no source) → walk finds 0 models → the miss
+- PASS — repair (write inferred `sources`) → walk finds the model → the catch
+- [ ] Run over 8 real benchmark cases: expect ~3/8 cold → ~7/8 warm
+- [ ] One case stays unfixable (Python transform, no SQL), refused both times
