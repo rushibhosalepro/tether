@@ -47,7 +47,7 @@ def resolve_dataset(table: str, platform: str = "snowflake") -> str | None:
     exact = [
         e
         for e in results
-        if (e.get("properties") or {}).get("qualifiedName", "").lower() == wanted
+        if ((e.get("properties") or {}).get("qualifiedName") or "").lower() == wanted
         or (e.get("name") or "").lower() == wanted
     ]
     if exact:

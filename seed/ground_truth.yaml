@@ -1,0 +1,39 @@
+# The complete, correct lineage. Used ONLY to score Tether. Never read by the repair
+# inferrer (that would be reading the answer key). The inferrer recovers these edges
+# independently by parsing the feature SQL under demo/warehouse/features/.
+#
+# Each feature's real source columns, and whether Tether can prove the edge from code.
+
+edges:
+  discount_sensitivity:
+    dataset: analytics.public.orders
+    columns: [discount_pct, total_amount]
+    provable_from_sql: true
+
+  avg_basket_value:
+    dataset: analytics.public.orders
+    columns: [total_amount]
+    provable_from_sql: true
+
+  order_frequency_90d:
+    dataset: analytics.public.orders
+    columns: [order_id, created_at]
+    provable_from_sql: true
+
+  margin_band:
+    dataset: analytics.public.products
+    columns: [unit_cost, list_price]
+    provable_from_sql: true
+
+  demand_index_7d:
+    dataset: analytics.public.orders
+    columns: [quantity, created_at]
+    provable_from_sql: true
+
+  support_sentiment:
+    dataset: analytics.public.customers
+    columns: [support_tickets]
+    provable_from_sql: false     # computed in Python. Tether must refuse to infer this.
+
+# Which models are actually serving. A change is a real breakage only if it reaches one of these.
+serving_models: [churn_propensity_v4, dynamic_pricing_v2]

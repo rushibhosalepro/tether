@@ -36,7 +36,7 @@ def _block() -> Verdict:
     impact = Impact(
         model_urn="urn:li:mlModel:(urn:li:dataPlatform:mlflow,churn_propensity_v4,PROD)",
         model_name="churn_propensity_v4",
-        deployment_status="IN_PRODUCTION",
+        deployment_status="IN_SERVICE",
         owners=["@aman"],
     )
     return Verdict(change=change, level=Level.BLOCK, impacts=[impact], reason="r", rule_id="R1")

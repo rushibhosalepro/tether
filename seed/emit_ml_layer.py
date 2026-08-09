@@ -1,20 +1,17 @@
-"""Emit the ML layer onto showcase-ecommerce.
+"""Emit the ML layer onto our own Snowflake-shaped datasets.
 
-The five sample datapacks ship no ML entities, which is exactly why the Production ML
-Agents track is thin. This script closes that gap: feature tables, features, model groups,
-models, deployments, and the edges that connect a Snowflake column to a model that is
-currently serving.
+showcase-ecommerce ships no ML entities, which is why the Production ML Agents track is thin.
+This emits the missing layer from seed/entities.yaml: datasets, feature tables, features,
+model groups, models, deployments, and the lineage edges.
 
-Two lineage mechanisms are emitted deliberately:
+Lineage is dataset-level (verified against OSS: an mlFeature rejects upstreamLineage). The
+edge is MLFeatureProperties.sources, which DataHub stores as a DerivedFrom relationship.
+Models link to features via MLModelProperties.mlFeatures (a Consumes relationship).
 
-  1. `MLFeatureProperties.sources` gives the dataset -> feature edge, which every DataHub
-     version renders.
-  2. `fineGrainedLineages` on the feature gives the column -> feature edge, which is what
-     Tether actually wants. If a given DataHub build does not surface it in
-     searchAcrossLineage, the walk falls back to the dataset edge plus the
-     `source_columns` custom property, and says so in the output rather than pretending.
+--partial omits every edge marked `declared: false` in entities.yaml. That is the realistic
+day-one graph: models whose inputs nobody declared. Tether's repair step puts them back.
 
-Run: `python -m seed.emit_ml_layer` or `tether seed`.
+Run: `python -m seed.emit_ml_layer [--partial] [--dry-run]`
 """
 
 from __future__ import annotations
@@ -28,13 +25,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from tether.config import settings  # noqa: E402
-from tether.graph.resolve import resolve_dataset, schema_field_urn  # noqa: E402
 
 SPEC = Path(__file__).with_name("entities.yaml")
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
 
 
 def _ts_ms(date_str: str) -> int:
@@ -43,23 +35,26 @@ def _ts_ms(date_str: str) -> int:
     return int(datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def main(dry_run: bool = False) -> int:
-    import datahub.emitter.mce_builder as builder
+def main(dry_run: bool = False, partial: bool = False) -> int:
+    import datahub.emitter.mce_builder as b
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
     from datahub.emitter.rest_emitter import DatahubRestEmitter
     from datahub.metadata.schema_classes import (
-        FineGrainedLineageClass,
-        FineGrainedLineageDownstreamTypeClass,
-        FineGrainedLineageUpstreamTypeClass,
+        DatasetPropertiesClass,
         MLFeaturePropertiesClass,
         MLFeatureTablePropertiesClass,
         MLModelDeploymentPropertiesClass,
         MLModelGroupPropertiesClass,
         MLModelPropertiesClass,
+        DeploymentStatusClass,
+        NumberTypeClass,
+        OtherSchemaClass,
         OwnerClass,
         OwnershipClass,
         OwnershipTypeClass,
-        UpstreamLineageClass,
+        SchemaFieldClass,
+        SchemaFieldDataTypeClass,
+        SchemaMetadataClass,
     )
 
     spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
@@ -68,137 +63,138 @@ def main(dry_run: bool = False) -> int:
     emitter = None if dry_run else DatahubRestEmitter(gms_server=settings.gms_url, token=settings.token or None)
 
     mcps: list[MetadataChangeProposalWrapper] = []
-    unresolved: list[str] = []
-    feature_urns: dict[str, str] = {}  # "table.feature" -> urn
+    omitted: list[str] = []
 
     def emit(urn: str, aspect) -> None:
         mcps.append(MetadataChangeProposalWrapper(entityUrn=urn, aspect=aspect))
 
-    def ownership(names: list[str]):
-        return OwnershipClass(
-            owners=[
-                OwnerClass(owner=builder.make_user_urn(n), type=OwnershipTypeClass.TECHNICAL_OWNER)
-                for n in names
-            ]
-        )
+    def ds_urn(name: str, plat: str) -> str:
+        return b.make_dataset_urn(plat, name, env)
 
-    # ---- feature tables and features -------------------------------------------------
-    for ft in spec["feature_tables"]:
-        ft_urn = builder.make_ml_feature_table_urn(ft.get("platform", "feast"), ft["name"])
-        names: list[str] = []
-
-        for f in ft["features"]:
-            f_urn = builder.make_ml_feature_urn(ft["name"], f["name"])
-            names.append(f_urn)
-            feature_urns[f"{ft['name']}.{f['name']}"] = f_urn
-
-            ds_urn = resolve_dataset(f["source_table"]) if not dry_run else None
-            if not ds_urn and not dry_run:
-                unresolved.append(f["source_table"])
-
-            emit(
-                f_urn,
-                MLFeaturePropertiesClass(
-                    description=f.get("description"),
-                    dataType=f.get("type", "CONTINUOUS"),
-                    sources=[ds_urn] if ds_urn else [],
-                    customProperties={
-                        "source_table": f["source_table"],
-                        "source_columns": ",".join(f["source_columns"]),
-                        "seeded_by": "tether",
-                    },
-                ),
-            )
-
-            # column -> feature, the edge the whole product depends on
-            if ds_urn:
-                emit(
-                    f_urn,
-                    UpstreamLineageClass(
-                        upstreams=[],
-                        fineGrainedLineages=[
-                            FineGrainedLineageClass(
-                                upstreamType=FineGrainedLineageUpstreamTypeClass.FIELD_SET,
-                                downstreamType=FineGrainedLineageDownstreamTypeClass.FIELD,
-                                upstreams=[schema_field_urn(ds_urn, c) for c in f["source_columns"]],
-                                downstreams=[f_urn],
-                                confidenceScore=1.0,
-                            )
-                        ],
-                    ),
-                )
-
+    # ---- datasets with columns -------------------------------------------------------
+    ds_lookup: dict[str, str] = {}
+    for ds in spec["datasets"]:
+        urn = ds_urn(ds["name"], ds["platform"])
+        ds_lookup[ds["name"]] = urn
+        emit(urn, DatasetPropertiesClass(name=ds["name"].split(".")[-1]))
         emit(
-            ft_urn,
-            MLFeatureTablePropertiesClass(
-                description=ft.get("description"), mlFeatures=names, customProperties={"seeded_by": "tether"}
+            urn,
+            SchemaMetadataClass(
+                schemaName=ds["name"].split(".")[-1],
+                platform=b.make_data_platform_urn(ds["platform"]),
+                version=0,
+                hash="",
+                platformSchema=OtherSchemaClass(rawSchema=""),
+                fields=[
+                    SchemaFieldClass(
+                        fieldPath=c,
+                        type=SchemaFieldDataTypeClass(type=NumberTypeClass()),
+                        nativeDataType="NUMBER",
+                    )
+                    for c in ds["columns"]
+                ],
             ),
         )
 
-    # ---- model groups -----------------------------------------------------------------
-    group_urns: dict[str, str] = {}
-    for g in spec.get("model_groups", []):
-        g_urn = builder.make_ml_model_group_urn(platform, g["name"], env)
-        group_urns[g["name"]] = g_urn
-        emit(g_urn, MLModelGroupPropertiesClass(description=g.get("description")))
+    # ---- feature tables --------------------------------------------------------------
+    ft_features: dict[str, list[str]] = {ft["name"]: [] for ft in spec["feature_tables"]}
+    feature_urn: dict[str, str] = {}
 
-    # ---- models and deployments -------------------------------------------------------
+    # ---- features (with or without the source edge) ----------------------------------
+    for f in spec["features"]:
+        f_urn = b.make_ml_feature_urn(f["table"], f["name"])
+        feature_urn[f["name"]] = f_urn
+        ft_features[f["table"]].append(f_urn)
+
+        # full mode emits every edge; partial mode omits the undeclared ones
+        declared = f.get("declared", True)
+        omit = partial and not declared
+        sources = [] if omit else [ds_lookup[f["source_dataset"]]]
+        if omit:
+            omitted.append(f"{f['name']} <- {f['source_dataset']}")
+
+        emit(
+            f_urn,
+            MLFeaturePropertiesClass(
+                description=f"feature computed by {f['computed_by']}",
+                dataType="CONTINUOUS",
+                sources=sources,
+            ),
+        )
+
+    for ft in spec["feature_tables"]:
+        emit(
+            b.make_ml_feature_table_urn(ft["platform"], ft["name"]),
+            MLFeatureTablePropertiesClass(description=ft.get("description"), mlFeatures=ft_features[ft["name"]]),
+        )
+
+    # ---- model groups ----------------------------------------------------------------
+    group_urn: dict[str, str] = {}
+    for g in spec.get("model_groups", []):
+        gu = b.make_ml_model_group_urn(platform, g["name"], env)
+        group_urn[g["name"]] = gu
+        emit(gu, MLModelGroupPropertiesClass(description=g.get("description")))
+
+    # ---- models + deployments --------------------------------------------------------
     for m in spec["models"]:
-        m_urn = builder.make_ml_model_urn(platform, m["name"], env)
+        m_urn = b.make_ml_model_urn(platform, m["name"], env)
         dep = m.get("deployment")
         dep_urns: list[str] = []
-
         if dep:
-            d_urn = builder.make_ml_model_deployment_urn(platform, dep["name"], env)
+            d_urn = b.make_ml_model_deployment_urn(platform, dep["name"], env)
             dep_urns.append(d_urn)
             emit(
                 d_urn,
                 MLModelDeploymentPropertiesClass(
                     description=f"Serving endpoint for {m['name']}",
                     createdAt=_ts_ms(m["last_trained"]),
-                    status=dep["status"],
-                    customProperties={"seeded_by": "tether"},
+                    status=DeploymentStatusClass.IN_SERVICE,
                 ),
             )
-
         emit(
             m_urn,
             MLModelPropertiesClass(
                 description=m.get("description"),
                 date=_ts_ms(m["last_trained"]),
-                version=None,
-                mlFeatures=[feature_urns[f] for f in m["features"] if f in feature_urns],
-                groups=[group_urns[m["group"]]] if m.get("group") in group_urns else [],
+                mlFeatures=[feature_urn[f] for f in m["features"] if f in feature_urn],
+                groups=[group_urn[m["group"]]] if m.get("group") in group_urn else [],
                 deployments=dep_urns,
-                trainingMetrics=[],
-                hyperParams=[],
                 customProperties={
                     "last_trained": m["last_trained"],
                     "seeded_by": "tether",
-                    **{k: str(v) for k, v in (m.get("metrics") or {}).items()},
+                    # deployment entities are not queryable over OSS GraphQL, so the serving
+                    # signal lives here where the walk can read it.
+                    "serving": "true" if dep else "false",
                 },
             ),
         )
         if m.get("owners"):
-            emit(m_urn, ownership(m["owners"]))
+            emit(
+                m_urn,
+                OwnershipClass(
+                    owners=[
+                        OwnerClass(owner=b.make_user_urn(o), type=OwnershipTypeClass.TECHNICAL_OWNER)
+                        for o in m["owners"]
+                    ]
+                ),
+            )
 
-    # ---- ship it ----------------------------------------------------------------------
-    print(f"{len(mcps)} aspects prepared for {settings.gms_url}")
-    if unresolved:
-        print("UNRESOLVED source tables (fix entities.yaml or load the datapack first):")
-        for t in sorted(set(unresolved)):
-            print(f"  - {t}")
+    # ---- ship it ---------------------------------------------------------------------
+    mode = "PARTIAL" if partial else "FULL"
+    print(f"[{mode}] {len(mcps)} aspects prepared for {settings.gms_url}")
+    if omitted:
+        print(f"omitted {len(omitted)} undeclared edge(s) (Tether should repair these):")
+        for o in omitted:
+            print(f"  - {o}")
     if dry_run:
-        for mcp in mcps:
-            print(f"  {mcp.aspectName:32} {mcp.entityUrn}")
-        return 1 if unresolved else 0
+        return 0
 
     for mcp in mcps:
         emitter.emit(mcp)
-    print(f"emitted {len(mcps)} aspects at {_now_ms()}")
+    print(f"emitted {len(mcps)} aspects")
     print(f"open {settings.frontend_url}/browse/mlModels to check")
-    return 1 if unresolved else 0
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(dry_run="--dry-run" in sys.argv))
+    raise SystemExit(main(dry_run="--dry-run" in sys.argv, partial="--partial" in sys.argv))

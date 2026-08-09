@@ -21,13 +21,25 @@ found missing. (benchmark pending, target shape below)
 
 ## Cases
 
-One row per real PR diff. `Right?` is measured against ground truth.
+One row per real column change, run against the live partial graph. "Cold" = the day-one
+graph where some edges were never declared. "After repair" fills in once the repair module
+lands. Ground truth is in `seed/ground_truth.yaml`.
 
-| # | The change | Tether said | Right? |
-|---|---|---|---|
-| loop-proof | Feature with no declared source; a live model consumes it | Cold: **MISS**. After repair: **CATCH** (found `fraud_detector_v2`) | ✅ both |
-| 001 | Drop `orders.discount_pct` (a live churn model reads it) | pending | |
-| 002 | pending | | |
+| The change | Reads (from SQL) | Live model | Cold | Should be |
+|---|---|---|---|---|
+| drop `orders.discount_pct` | discount_sensitivity | churn_propensity_v4 | **MISS** (edge undeclared) | BLOCK |
+| drop `orders.quantity` | demand_index_7d | dynamic_pricing_v2 | **MISS** (edge undeclared) | BLOCK |
+| drop `orders.total_amount` | avg_basket_value | churn_propensity_v4 | **CATCH** | BLOCK |
+| drop `orders.order_id` | order_frequency_90d | churn_propensity_v4 | **CATCH** | BLOCK |
+| drop `products.unit_cost` | margin_band | dynamic_pricing_v2 | **CATCH** | BLOCK |
+| drop `orders.status` | (nothing) | none | **PASS** ✅ | PASS |
+| drop `customers.support_tickets` | support_sentiment (Python) | churn_propensity_v4 | **MISS** | BLOCK, but unprovable |
+
+Cold catches 3 of 6 real breakages, correctly passes the true-negative, and misses 3. Two of
+those misses are repairable from SQL; one (the Python feature) Tether must refuse to guess.
+
+Column precision is real: dropping `orders.status` correctly touches nothing, because no
+feature's SQL reads it. The walk is not just "any column in a consumed table".
 
 ---
 

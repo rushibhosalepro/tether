@@ -10,7 +10,7 @@ def live(name="churn_propensity_v4"):
     return Impact(
         model_urn=f"urn:li:mlModel:(urn:li:dataPlatform:mlflow,{name},PROD)",
         model_name=name,
-        deployment_status="IN_PRODUCTION",
+        deployment_status="IN_SERVICE",
         owners=["@aman"],
         last_trained="2026-03-14",
     )

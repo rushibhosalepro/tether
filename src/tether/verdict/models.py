@@ -53,14 +53,14 @@ class Impact:
     feature_urn: str | None = None
     feature_name: str | None = None
     deployment_urn: str | None = None
-    deployment_status: str | None = None  # e.g. "IN_PRODUCTION"
+    deployment_status: str | None = None  # e.g. "IN_SERVICE"
     owners: list[str] = field(default_factory=list)
     last_trained: str | None = None  # ISO8601
     hops: list[str] = field(default_factory=list)  # the URN path, column -> ... -> model
 
     @property
     def is_live(self) -> bool:
-        return self.deployment_status == "IN_PRODUCTION"
+        return self.deployment_status == "IN_SERVICE"
 
 
 @dataclass

@@ -52,7 +52,7 @@ query modelsFrom($urn: String!, $count: Int!) {
           urn
           ... on MLModel {
             name
-            properties { description lastModified { time } deployments { urn } }
+            properties { description customProperties { key value } }
             ownership { owners { owner { ... on CorpUser { urn username } } } }
           }
         }
@@ -62,11 +62,10 @@ query modelsFrom($urn: String!, $count: Int!) {
 }
 """
 
-DEPLOYMENT = """
-query deployment($urn: String!) {
-  mlModelDeployment(urn: $urn) { urn properties { status createdAt } }
-}
-"""
+
+def _props(entity: dict) -> dict[str, str]:
+    kv = ((entity.get("properties") or {}).get("customProperties") or [])
+    return {p["key"]: p["value"] for p in kv}
 
 
 def _owners(entity: dict) -> list[str]:
@@ -87,23 +86,33 @@ def features_of(dataset_urn: str, count: int = 50) -> list[dict]:
 
 
 def _column_used_by(feature: dict, column: str | None) -> bool:
-    """Conservative column filter. The graph edge is dataset-level, so we lean on evidence.
+    """Does this feature (found in the graph) read the changed column?
 
-    Tether records the source columns it inferred in the feature description/props. If that
-    evidence names the column, it is used. If there is no evidence, assume used rather than
-    silently clearing a real dependency (a false negative is the expensive error).
+    The graph edge is dataset-level, so column precision comes from parsing the feature SQL
+    (repair.infer). When the SQL proves it, use the exact answer. When there is no SQL to read
+    (a Python feature whose edge was nonetheless declared), stay conservative and include it,
+    because a false negative on a real declared dependency is the expensive error.
     """
     if not column:
         return True
-    desc = ((feature.get("properties") or {}).get("description") or "").lower()
-    if "source_columns" in desc or column.lower() in desc:
-        return column.lower() in desc
-    return True
+    from ..repair.infer import infer
+
+    name = feature.get("name")
+    if not name:
+        return True
+    ev = infer(name)
+    if not ev.provable:
+        return True  # declared edge we cannot parse: do not silently drop it
+    return column.lower() in ev.columns
 
 
 def ml_impacts(dataset_urn: str, column: str | None = None, max_results: int = 50) -> list[Impact]:
-    """Every serving model reachable from a dataset (optionally filtered to one column)."""
-    impacts: list[Impact] = []
+    """Every serving model reachable from a dataset (optionally filtered to one column).
+
+    Deduplicated by model: if two features feed the same model, the model appears once,
+    attributed to the first feature that reached it.
+    """
+    impacts: dict[str, Impact] = {}
     for feat in features_of(dataset_urn, max_results):
         if not _column_used_by(feat, column):
             continue
@@ -113,40 +122,19 @@ def ml_impacts(dataset_urn: str, column: str | None = None, max_results: int = 5
         rels = (((data or {}).get("entity") or {}).get("relationships") or {}).get("relationships") or []
         for r in rels:
             m = r["entity"]
-            props = m.get("properties") or {}
-            dep_urns = [d["urn"] for d in (props.get("deployments") or [])]
-            status, dep_urn = _deployment_status(dep_urns)
-            impacts.append(
-                Impact(
-                    model_urn=m["urn"],
-                    model_name=m.get("name") or m["urn"].split(",")[-2],
-                    feature_urn=feat_urn,
-                    feature_name=feat_name,
-                    deployment_urn=dep_urn,
-                    deployment_status=status,
-                    owners=_owners(m),
-                    last_trained=_iso(((props.get("lastModified") or {}).get("time"))),
-                    hops=[dataset_urn, feat_urn, m["urn"]],
-                )
+            if m["urn"] in impacts:
+                continue
+            props = _props(m)
+            serving = props.get("serving") == "true"
+            impacts[m["urn"]] = Impact(
+                model_urn=m["urn"],
+                model_name=m.get("name") or m["urn"].split(",")[-2],
+                feature_urn=feat_urn,
+                feature_name=feat_name,
+                deployment_urn=None,
+                deployment_status="IN_SERVICE" if serving else None,
+                owners=_owners(m),
+                last_trained=props.get("last_trained"),
+                hops=[dataset_urn, feat_urn, m["urn"]],
             )
-    return impacts
-
-
-def _deployment_status(dep_urns: list[str]) -> tuple[str | None, str | None]:
-    for urn in dep_urns:
-        try:
-            d = client().graphql(DEPLOYMENT, {"urn": urn})
-        except Exception:
-            continue
-        props = ((d.get("mlModelDeployment") or {}).get("properties") or {})
-        if props.get("status") == "IN_PRODUCTION":
-            return "IN_PRODUCTION", urn
-    return (None, dep_urns[0]) if dep_urns else (None, None)
-
-
-def _iso(ms: int | None) -> str | None:
-    if not ms:
-        return None
-    from datetime import datetime, timezone
-
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat()
+    return list(impacts.values())

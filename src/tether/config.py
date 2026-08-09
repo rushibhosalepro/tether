@@ -31,6 +31,9 @@ class Settings:
     demo_mode: bool = os.getenv("DEMO_MODE", "0") == "1"
     record: bool = os.getenv("TETHER_RECORD", "0") == "1"
     ledger_path: Path = ROOT / "predictions.jsonl"
+    # where the feature-engineering SQL lives. Tether reads this (not the graph) to get the
+    # column precision DataHub's dataset-level ML lineage does not store.
+    features_dir: Path = Path(os.getenv("TETHER_FEATURES_DIR", str(ROOT / "demo" / "warehouse" / "features")))
 
     # github
     gh_token: str = os.getenv("GITHUB_TOKEN", "")

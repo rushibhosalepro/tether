@@ -1,50 +1,74 @@
-# The ML layer Tether needs and showcase-ecommerce does not ship.
+# The ML layer showcase-ecommerce does not ship. Emitted on top of our own Snowflake-shaped
+# datasets so the demo needs nothing but quickstart.
 #
-# Table names below are reconciled against the live graph at emit time by
-# `tether.graph.resolve.resolve_dataset`, so they can be written the way a dbt author
-# would write them. Anything that fails to resolve is reported, not silently skipped.
+# IMPORTANT: lineage here is dataset-level (MLFeatureProperties.sources), because OSS DataHub
+# does not accept column-level lineage on an mlFeature (verified 2026-08-09). Which columns a
+# feature reads is proven from its SQL by the repair step, not stored on the edge.
 #
-# This file is also the answer sheet for the benchmark: `source_columns` is the ground
-# truth for which columns feed which model.
+# `declared: false` marks an edge nobody wrote down. In --partial mode (the realistic day-one
+# graph) those edges are omitted, so the walk misses the model until Tether repairs it.
+# The complete, correct edge set lives in ground_truth.yaml and is never read by the inferrer.
 
 platform: mlflow
 env: PROD
+
+datasets:
+  - name: analytics.public.orders
+    platform: snowflake
+    columns: [order_id, customer_id, created_at, quantity, unit_price, discount_pct, total_amount, status]
+  - name: analytics.public.customers
+    platform: snowflake
+    columns: [customer_id, signup_date, country, lifetime_value, segment, support_tickets]
+  - name: analytics.public.products
+    platform: snowflake
+    columns: [product_id, sku, category, unit_cost, list_price]
 
 feature_tables:
   - name: customer_churn_features
     platform: feast
     description: Behavioural and monetary features for the churn models.
-    features:
-      - name: discount_sensitivity
-        type: CONTINUOUS
-        source_table: orders
-        source_columns: [discount_pct, total_amount]
-        description: Ratio of discounted spend to total spend over 90 days.
-      - name: order_frequency_90d
-        type: CONTINUOUS
-        source_table: orders
-        source_columns: [order_id, created_at]
-      - name: avg_basket_value
-        type: CONTINUOUS
-        source_table: orders
-        source_columns: [total_amount]
-      - name: support_ticket_count
-        type: ORDINAL
-        source_table: customers
-        source_columns: [customer_id]
-
   - name: pricing_features
     platform: feast
     description: Inputs to the dynamic pricing model.
-    features:
-      - name: margin_band
-        type: ORDINAL
-        source_table: products
-        source_columns: [unit_cost, list_price]
-      - name: demand_index_7d
-        type: CONTINUOUS
-        source_table: orders
-        source_columns: [quantity, created_at]
+
+# Each feature is computed by a real SQL (or Python) file. The repair step parses that file to
+# recover the source columns. `declared: false` = the edge is missing in the partial graph.
+features:
+  - name: discount_sensitivity
+    table: customer_churn_features
+    computed_by: features/discount_sensitivity.sql
+    source_dataset: analytics.public.orders
+    declared: false          # nobody wrote it down -> cold miss, repairable from SQL
+
+  - name: avg_basket_value
+    table: customer_churn_features
+    computed_by: features/avg_basket_value.sql
+    source_dataset: analytics.public.orders
+    declared: true           # declared -> caught cold
+
+  - name: order_frequency_90d
+    table: customer_churn_features
+    computed_by: features/order_frequency_90d.sql
+    source_dataset: analytics.public.orders
+    declared: true           # declared -> caught cold
+
+  - name: margin_band
+    table: pricing_features
+    computed_by: features/margin_band.sql
+    source_dataset: analytics.public.products
+    declared: true           # declared -> caught cold
+
+  - name: demand_index_7d
+    table: pricing_features
+    computed_by: features/demand_index_7d.sql
+    source_dataset: analytics.public.orders
+    declared: false          # nobody wrote it down -> cold miss, repairable from SQL
+
+  - name: support_sentiment
+    table: customer_churn_features
+    computed_by: features/support_sentiment.py   # Python, no SQL to parse
+    source_dataset: analytics.public.customers
+    declared: false          # missing AND unfixable -> Tether must refuse to guess
 
 model_groups:
   - name: churn_propensity
@@ -55,41 +79,24 @@ model_groups:
 models:
   - name: churn_propensity_v4
     group: churn_propensity
-    description: >
-      Predicts 30-day churn probability. Serving on the retention email trigger.
-      Silently degrades rather than erroring when an input goes missing.
+    description: Predicts 30-day churn. Serving on the retention email trigger.
     owners: [aman]
     last_trained: "2026-03-14"
-    features:
-      - customer_churn_features.discount_sensitivity
-      - customer_churn_features.order_frequency_90d
-      - customer_churn_features.avg_basket_value
-    metrics: { auc: "0.81", precision_at_10: "0.44" }
-    deployment:
-      name: churn-propensity-v4-serving
-      status: IN_PRODUCTION
+    features: [discount_sensitivity, avg_basket_value, order_frequency_90d, support_sentiment]
+    deployment: { name: churn-propensity-v4-serving, status: IN_SERVICE }
 
   - name: churn_propensity_v3
     group: churn_propensity
     description: Previous version, kept for comparison. Not serving.
     owners: [aman]
     last_trained: "2025-11-02"
-    features:
-      - customer_churn_features.discount_sensitivity
-      - customer_churn_features.support_ticket_count
+    features: [discount_sensitivity]
     deployment: null
 
   - name: dynamic_pricing_v2
     group: dynamic_pricing
-    description: >
-      Sets storefront price multipliers. This is the one that generates the revenue,
-      and the one nobody remembers depends on unit_cost.
+    description: Sets storefront price multipliers. The one that makes the money.
     owners: [wenjia]
     last_trained: "2026-06-20"
-    features:
-      - pricing_features.margin_band
-      - pricing_features.demand_index_7d
-    metrics: { mape: "0.07" }
-    deployment:
-      name: dynamic-pricing-v2-serving
-      status: IN_PRODUCTION
+    features: [margin_band, demand_index_7d]
+    deployment: { name: dynamic-pricing-v2-serving, status: IN_SERVICE }
