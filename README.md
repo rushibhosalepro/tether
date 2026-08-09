@@ -95,6 +95,9 @@ Four real pull requests on a separate public repo, each judged against a live Da
 | [#3](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/3) | drop `products.unit_cost` | 🔴 blocks `dynamic_pricing_v2` |
 | [#4](https://github.com/rushibhosalepro/tether-demo-warehouse/pull/4) | drop `orders.status` | 🟢 no ML impact, safe to merge |
 
+Screenshots of the blocked PRs and the resulting DataHub incidents, lineage, and inferred-edge
+tag are in [`examples/screens/`](examples/screens/).
+
 ## Try it
 
 **Zero infrastructure, no Docker** (replays recorded DataHub responses). Watch the whole loop,
