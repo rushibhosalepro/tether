@@ -68,7 +68,7 @@ report renders to [`examples/report.html`](examples/report.html).
 ## Three trust boundaries, each enforced by a test
 
 Tether makes three decisions it must never get wrong. None is a promise in this README, each is
-a test that fails the build if the guarantee ever breaks:
+a test that fails if the guarantee ever breaks:
 
 1. **The LLM never decides to block.** The classifier ([`verdict/classifier.py`](src/tether/verdict/classifier.py))
    is the only thing that can emit `BLOCK`. The model is called in exactly one place, after a
@@ -81,8 +81,6 @@ a test that fails the build if the guarantee ever breaks:
    throws, a parse failure, it returns `ERROR`, not PASS: a red status and a non-zero exit that
    blocks merge. A green check on a PR it never actually checked is the one thing a gate must
    never do. Enforced by [`tests/test_fail_closed.py`](tests/test_fail_closed.py).
-
-The whole suite runs in under a second:
 
 ```bash
 python -m pytest -q      # 40 tests
