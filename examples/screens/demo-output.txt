@@ -1,0 +1,9 @@
+Tether loop, replayed offline (no DataHub needed)
+
+The same PR, dropping orders.discount_pct, judged twice.
+
+  COLD    drop orders.discount_pct   ->  PASS   (no one declared the edge, so the walk misses)
+  REPAIR  discount_sensitivity <- orders   proven from features/discount_sensitivity.sql:5
+  WARM    drop orders.discount_pct   ->  BLOCK  churn_propensity_v4, owner @aman
+
+The write-back is what flipped the verdict. That is the loop.
