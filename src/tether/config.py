@@ -30,7 +30,14 @@ class Settings:
     timeout: int = int(os.getenv("TETHER_TIMEOUT", "30"))
     demo_mode: bool = os.getenv("DEMO_MODE", "0") == "1"
     record: bool = os.getenv("TETHER_RECORD", "0") == "1"
+    # which recorded fixture set to replay/record (cold vs warm graph), for the offline loop demo
+    fixture_set: str = os.getenv("TETHER_FIXTURE_SET", "")
     ledger_path: Path = ROOT / "predictions.jsonl"
+
+    @property
+    def fixture_dir(self) -> Path:
+        base = ROOT / "fixtures"
+        return base / self.fixture_set if self.fixture_set else base
     # where the feature-engineering SQL lives. Tether reads this (not the graph) to get the
     # column precision DataHub's dataset-level ML lineage does not store.
     features_dir: Path = Path(os.getenv("TETHER_FEATURES_DIR", str(ROOT / "demo" / "warehouse" / "features")))

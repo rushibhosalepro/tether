@@ -66,12 +66,12 @@ class DataHubClient:
         return hashlib.sha1(blob.encode()).hexdigest()[:16]
 
     def _record(self, query: str, variables: dict[str, Any], body: dict) -> None:
-        FIXTURES.mkdir(exist_ok=True)
-        path = FIXTURES / f"{self._key(query, variables)}.json"
-        path.write_text(json.dumps(body, indent=2), encoding="utf-8")
+        d = settings.fixture_dir
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{self._key(query, variables)}.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
 
     def _replay(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-        path = FIXTURES / f"{self._key(query, variables)}.json"
+        path = settings.fixture_dir / f"{self._key(query, variables)}.json"
         if not path.exists():
             raise DataHubError(
                 f"DEMO_MODE: no fixture for this query ({path.name}). "

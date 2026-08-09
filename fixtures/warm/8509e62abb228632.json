@@ -1,0 +1,53 @@
+{
+  "data": {
+    "entity": {
+      "relationships": {
+        "relationships": [
+          {
+            "entity": {
+              "urn": "urn:li:mlFeature:(customer_churn_features,avg_basket_value)",
+              "name": "avg_basket_value",
+              "properties": {
+                "description": "feature computed by features/avg_basket_value.sql",
+                "sources": [
+                  {
+                    "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.public.orders,PROD)"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:mlFeature:(customer_churn_features,order_frequency_90d)",
+              "name": "order_frequency_90d",
+              "properties": {
+                "description": "feature computed by features/order_frequency_90d.sql",
+                "sources": [
+                  {
+                    "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.public.orders,PROD)"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "entity": {
+              "urn": "urn:li:mlFeature:(customer_churn_features,discount_sensitivity)",
+              "name": "discount_sensitivity",
+              "properties": {
+                "description": "feature computed by features/discount_sensitivity.sql",
+                "sources": [
+                  {
+                    "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,analytics.public.orders,PROD)"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "extensions": {}
+}

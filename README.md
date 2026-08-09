@@ -6,6 +6,8 @@ Tether blocks the pull request that would break a production ML model. When it m
 finds the lineage edge nobody ever wrote down, proves it against the feature SQL, writes it
 back to DataHub, and stops missing it.
 
+> **Every model this missed was a lineage edge nobody wrote down.**
+
 > Built for **Build with DataHub: The Agent Hackathon**, Production ML Agents track.
 > Tool repo: this one. Live demo PRs: [tether-demo-warehouse](https://github.com/rushibhosalepro/tether-demo-warehouse/pulls).
 
@@ -91,18 +93,33 @@ Four real pull requests on a separate public repo, each judged against a live Da
 
 ## Try it
 
-**Zero infrastructure** (replays recorded DataHub responses, no Docker):
+**Zero infrastructure, no Docker** (replays recorded DataHub responses). Watch the whole loop,
+the same PR blocked or not depending on whether Tether repaired the graph first:
 
 ```bash
-pip install -e .
-DEMO_MODE=1 tether check --diff bench/cases/001-drop-orders-discount-pct/diff.patch
+pip install -e ".[dev]"
+tether demo
 ```
 
-**The full thing** (real DataHub, the repair loop, the write-backs):
+prints:
+
+```
+COLD    drop orders.discount_pct   ->  PASS   (no one declared the edge, so the walk misses)
+REPAIR  discount_sensitivity <- orders   proven from features/discount_sensitivity.sql:5
+WARM    drop orders.discount_pct   ->  BLOCK  churn_propensity_v4, owner @aman
+```
+
+Run the tests while you're here (they need the `[dev]` extra above):
+
+```bash
+python -m pytest -q        # 34 tests
+```
+
+**The full thing** (needs a live DataHub, this is where the write-backs actually happen):
 
 ```bash
 bash scripts/quickstart.sh          # datahub quickstart + seed the ML layer, ~6 min
-tether bench                        # cold -> repair -> warm, regenerates the report
+tether bench                        # cold -> repair -> warm on the real graph, regenerates the report
 ```
 
 Windows: `powershell -File scripts/quickstart.ps1`.

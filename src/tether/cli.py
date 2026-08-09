@@ -45,6 +45,41 @@ def cmd_bench(args) -> int:
     return bench()
 
 
+def cmd_demo(args) -> int:
+    """Play the whole loop offline, no DataHub: cold PASS -> repair -> warm BLOCK.
+
+    Runs the same `tether check` twice against recorded fixtures, once against the cold graph
+    (the edge nobody declared) and once against the warm graph (after Tether wrote it back).
+    """
+    import os
+    import subprocess
+
+    diff = "bench/cases/001-drop-orders-discount-pct/diff.patch"
+    root = Path(__file__).resolve().parents[2]
+
+    def check(fixture_set: str) -> str:
+        env = {**os.environ, "DEMO_MODE": "1", "TETHER_FIXTURE_SET": fixture_set,
+               "TETHER_NO_LLM": "1", "PYTHONPATH": str(root / "src")}
+        out = subprocess.run(
+            [sys.executable, "-m", "tether.cli", "check", "--diff", diff, "--pr-url", "demo", "--dry-run"],
+            cwd=root, env=env, capture_output=True, text=True,
+        ).stdout
+        return "BLOCK" if "BLOCK" in out.split("\n")[0] else "PASS"
+
+    print("Tether loop, replayed offline (no DataHub needed)\n")
+    print("The same PR, dropping orders.discount_pct, judged twice.\n")
+
+    cold = check("cold")
+    print(f"  COLD    drop orders.discount_pct   ->  {cold}   (no one declared the edge, so the walk misses)")
+    print("  REPAIR  discount_sensitivity <- orders   proven from features/discount_sensitivity.sql:5")
+    warm = check("warm")
+    print(f"  WARM    drop orders.discount_pct   ->  {warm}  churn_propensity_v4, owner @aman\n")
+
+    ok = cold == "PASS" and warm == "BLOCK"
+    print("The write-back is what flipped the verdict. That is the loop." if ok else "(unexpected: check fixtures)")
+    return 0 if ok else 1
+
+
 def cmd_doctor(args) -> int:
     from .datahub_client import client
 
@@ -74,8 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(func=cmd_seed)
 
-    b = sub.add_parser("bench", help="run the cold->repair->warm benchmark")
+    b = sub.add_parser("bench", help="run the cold->repair->warm benchmark (needs live DataHub)")
     b.set_defaults(func=cmd_bench)
+
+    dm = sub.add_parser("demo", help="play the loop offline from fixtures, no DataHub needed")
+    dm.set_defaults(func=cmd_demo)
 
     d = sub.add_parser("doctor", help="check the local setup")
     d.set_defaults(func=cmd_doctor)
