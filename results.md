@@ -58,6 +58,22 @@ feature's SQL reads it. The walk is not just "any column in a consumed table".
 
 ---
 
+## An actual GitHub PR, blocked for real
+
+PR: https://github.com/rushibhosalepro/tether/pull/1 (drops `orders.discount_pct`)
+
+Tether ran against the PR diff and the live DataHub, and on the PR itself:
+
+- Set a red commit status **`tether` = failure**: "1 production model still read a column this
+  PR changes" (a required status greys out the merge button)
+- Posted a PR comment naming `churn_propensity_v4`, owner @aman, last trained 2026-03-14, and
+  linking the DataHub incident
+- Raised a real incident on the model in DataHub (priority CRITICAL)
+- Re-running updates the same comment and reuses the same incident (no spam)
+
+Note: check runs need a GitHub App, so the last-mile verb is a commit status, which works with
+a normal token and gates merge the same way. Verified 2026-08-09.
+
 ## A real change, run end-to-end with write-backs (live DataHub)
 
 `tether check` on the `drop orders.discount_pct` diff (warm graph), write-backs ON:
